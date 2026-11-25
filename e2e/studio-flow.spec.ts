@@ -17,6 +17,7 @@ test("대본 → 장면(개별 수정·재생성) → 나레이션(개별 재녹
   await page.getByText("계정이 없나요? 가입하기").click();
   await page.locator("#email").fill(`e2e-${Date.now()}@example.test`);
   await page.locator("#password").fill("password123");
+  await page.locator("#password-confirm").fill("password123");
   await page.getByRole("button", { name: "가입하고 시작하기" }).click();
   await expect(page).toHaveURL(/\/$/);
 
