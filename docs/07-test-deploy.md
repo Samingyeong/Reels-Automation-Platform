@@ -92,3 +92,7 @@ GitHub Actions run 링크: [run #1](https://github.com/Samingyeong/Reels-Automat
 | Trigger.dev 태스크 번들·로드 | ✅ esbuild 번들 → 3개 태스크 등록 확인 | 미실행 |
 | Trigger.dev 클라우드 실행 | 미실행 (로그인·프로젝트 필요, DR-011) | 미실행 |
 | 유료 API / 실제 Instagram 게시 | 미실행 (Mock 만 사용) | 미실행 |
+
+### 클라우드 배포 상태 (2026-11-25)
+- Vercel prod: 비밀 키(Sensitive) 등록 후 재배포. `/login` 200, `/` 307(로그인 이동), `/api/projects` 401 — 정상.
+- Trigger.dev prod: **배포 차단**. 빌드·업로드(9.58MB)는 성공하나 초기화 단계에서 `Deployments are not available for this organization.` (CLI 4.8.10, 기본/`--native-build` 모두 동일). 조직 "Reels Studio" 카드 확인 완료·Billing 화면 이상 없음 → Trigger.dev 지원팀 문의 중. 해결 전까지 클라우드 파이프라인 실검증(시간·비용·재시도·브라우저 종료 후 진행)은 **미실시**.
