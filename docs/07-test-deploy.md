@@ -96,3 +96,14 @@ GitHub Actions run 링크: [run #1](https://github.com/Samingyeong/Reels-Automat
 ### 클라우드 배포 상태 (2026-11-25)
 - Vercel prod: 비밀 키(Sensitive) 등록 후 재배포. `/login` 200, `/` 307(로그인 이동), `/api/projects` 401 — 정상.
 - Trigger.dev prod: **배포 차단**. 빌드·업로드(9.58MB)는 성공하나 초기화 단계에서 `Deployments are not available for this organization.` (CLI 4.8.10, 기본/`--native-build` 모두 동일). 조직 "Reels Studio" 카드 확인 완료·Billing 화면 이상 없음 → Trigger.dev 지원팀 문의 중. 해결 전까지 클라우드 파이프라인 실검증(시간·비용·재시도·브라우저 종료 후 진행)은 **미실시**.
+
+### Trigger.dev 배포 차단 진단 (2026-11-25) — 상세: docs/09
+- API 직접 호출: whoami 200, 프로젝트 env 200, `POST /api/v1/deployments` **403 `DEPLOYMENT_ACCESS_DENIED`** → 인증 아님, 조직 배포 정책.
+- Hello World(태스크 1개) 배포도 동일 403 → 프로젝트 코드 무관. status.trigger.dev "All services are online" (08:50 UTC).
+
+### Trigger.dev **dev** 환경 임시 통합 테스트 (로컬, 2026-11-25) — 운영 검증 아님
+- 구성: 로컬 Next(`next start`, `JOB_DISPATCH_MODE=trigger`, dev 키) + 로컬 Supabase → Trigger.dev 클라우드 dev 큐 → 이 개발 환경의 dev 워커.
+- 사전 조치: 개발 환경 네트워크에 `engine.trigger.dev`, `otel.trigger.dev`, `realtime.trigger.dev` 허용 (dev 워커 dequeue·presence 가 프록시 403 으로 막혀 첫 E2E 실패 → 원인 확인 후 허용).
+- 결과: Playwright E2E **2/2 통과 (46.5s)**. 작업 12건(script 2, scene_video 5, narration 4, render 1) 모두 **attempt 1·dispatch 1** — 중복 실행 없음. pipeline-job 58~176ms, render-job 28.9s (이 개발 환경 CPU).
+- 워커 중단 중 생성된 작업(08:47 queued)이 워커 연결 후(08:51) 1회 실행됨 → 브라우저/서버와 무관하게 큐에서 이어짐을 확인.
+- 미검증: Trigger 경유 재시도(delay 재전달)·클라우드 머신 렌더 시간·비용 (prod 배포 후).

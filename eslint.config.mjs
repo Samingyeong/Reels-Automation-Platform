@@ -17,6 +17,7 @@ export default [
     ignores: [
       "node_modules/**",
       ".next/**",
+      ".trigger/**",
       "out/**",
       "build/**",
       "next-env.d.ts",

@@ -42,11 +42,14 @@ export const renderJob = schemaTask({
 
 /**
  * Outbox 스윕: 전달 누락·lease 만료 작업을 다시 전달하는 안전망.
- * 10분 주기·micro 머신 → 월 약 4,300회 × (실행비 + 수 초 컴퓨트) ≈ $0.2 (1분 주기는 약 $4 로 무료 크레딧 대부분 소진)
+ * 1시간 주기·micro 머신 → 월 약 720회 ≈ $0.05.
+ * Trigger.dev Free 조직은 선언형 스케줄에 60분 기본 실행 창(window)이 적용된다
+ * (webapp `createBackgroundWorker.server.ts` schedule_default_window, `freeSchedulePolicy.server.ts`).
+ * 정상 경로는 요청 즉시 트리거 + 재시도 delay 트리거이므로 스윕은 드문 회수용으로 충분하다.
  */
 export const sweepOutbox = schedules.task({
   id: "sweep-outbox",
-  cron: "*/10 * * * *",
+  cron: "0 * * * *",
   machine: "micro",
   run: async () => {
     const deps = createWorkerDeps();
