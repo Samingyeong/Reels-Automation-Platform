@@ -206,3 +206,25 @@
 - **결정**: 스튜디오는 `GET /api/projects/:id` 를 생성·렌더 중 1.5초, 검수 중 10초 간격으로 폴링하고 탭 복귀 시 갱신한다. 상태의 진실 공급원이 DB 이므로 새로고침·브라우저 종료 후에도 그대로 복원된다. 선택한 장면은 URL(`?scene=`), 저장 전 대본 초안은 localStorage(같은 revision 일 때만 복원).
 - **이유**: 개인용 MVP 에서 동시 사용자가 적고, Realtime 은 로컬 스택 추가 컨테이너·RLS 구독 설정이 필요해 이득 대비 복잡도가 크다. 폴링 응답의 서명 URL 이 바뀌어도 Player 가 다시 로드되지 않도록 최종 해시가 같으면 이전 미리보기 props 를 재사용.
 - **재검토 조건**: 다중 사용자·협업 편집, 또는 폴링 부하가 문제가 될 때 Supabase Realtime(`projects`, `scenes`, `jobs` 는 이미 publication 에 포함) 으로 전환.
+
+## DR-015 개발(local) / 클라우드(cloud) 환경 분리와 무료 플랜 조건
+
+- **결정**: `APP_ENV` 로 분리한다 (미설정 시 Vercel 이면 cloud). cloud 는 Trigger.dev 연결(`TRIGGER_SECRET_KEY`)이 **필수**이며 없으면 API 가 503 `SERVICE_MISCONFIGURED` 로 실패한다 — inline 실행으로 조용히 바뀌지 않는다 (`src/server/env.ts`). 로컬 Supabase 주소도 cloud 에서 거부.
+- **배치**: Supabase 클라우드(도쿄) · Vercel(`hnd1`, 같은 지역) · Trigger.dev prod. 마이그레이션은 `scripts/remote-migrate.mjs`(Management API, DB 비밀번호 불필요, CLI 와 같은 이력 테이블). 렌더러·번들은 Vercel 함수에서 제외(`outputFileTracingExcludes`)하고 Trigger.dev 워커에서만 실행.
+- **비밀 관리**: 비밀 키는 각 대시보드의 Sensitive 변수로만 저장. 저장소·채팅·로그에 남기지 않는다. 클라이언트 번들에는 Supabase URL·publishable key 만 포함됨을 배포 번들 검사로 확인 (docs/07 §6).
+- **무료 플랜 조건 (2026-11-25 공식 문서)**: docs/08 §6. 핵심 위험 3가지
+  1. **Vercel Hobby 는 개인·비상업 용도만** 허용 → 수익화 운영 전 Pro 전환 필요.
+  2. Supabase Free 는 1주 비활성 시 일시 정지, 파일 1GB → 발행 완료 프로젝트의 중간 산출물 정리 정책 필요.
+  3. Trigger.dev Free 월 $5 크레딧 → sweep 스케줄을 10분·micro 로 낮춤(월 약 $0.1), 재시도는 delay 트리거.
+- **재검토 조건**: 상업적 운영 시작, 저장 용량 70% 도달, Trigger.dev 크레딧 70% 도달 시 유료 플랜 비용을 사용자에게 먼저 보고.
+
+## DR-016 Provider 교체: 카탈로그 + 서비스 설정 + 프로젝트 스냅샷
+
+- **결정**: 대본·장면 시각물·음성 provider 를 **id 로 선택**한다 (`src/providers/catalog.ts`).
+  - 카탈로그 항목: `available`(구현됨) / `planned`(조사만 완료, 선택 시 오류). live 항목은 `PROVIDER_MODE=live` 일 때만 허용(설정 + 배포 환경변수 이중 잠금).
+  - 선택값 `ProviderSelection` = script, sceneVisual, sceneVideo(혼합용), speech, visualStrategy(`image_motion` | `video` | `hybrid`), monthlyBudgetUsd.
+  - 혼합 방식은 훅(첫 장면)과 가장 긴 장면만 영상 provider, 나머지는 이미지+모션 (`videoSceneIndexes`).
+  - 예산 가드 `estimateReelCostUsd` → `checkBudget`: 추정 불가(null) 항목이 있거나 월 예산을 넘으면 유료 작업을 시작하지 않는다.
+- **DB 단계 (첫 live provider 구현과 함께)**: `user_settings`(사용자별 선택, RLS: 본인 SELECT, 쓰기는 RPC) + `projects.provider_selection jsonb`(생성 시 스냅샷 → 진행 중 프로젝트는 설정 변경 영향 없음, jobInputKey 에 provider 이름 포함) + 설정 화면(카탈로그의 `catalogForClient()` 표시, planned 는 비활성). 선택지가 Mock 뿐인 지금 화면을 만들면 의미 없는 UI 가 되므로 미룬다.
+- **이미지+모션**: `SceneVisual.image` 에 Ken Burns(줌·팬) 모션을 `ReelComposition` 에 추가 (Remotion 공식 skill 가이드 기준), 이미지 provider 구현 시 함께.
+- **재검토 조건**: 후보 평가(docs/08 §7) 결과 확정 시 해당 항목을 `available` 로 전환.
