@@ -5,7 +5,7 @@ import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabaseBrowser } from "@/lib/supabase-browser";
+import { supabaseBrowser, supabaseEmailLinkClient } from "@/lib/supabase-browser";
 import { NewPasswordFields, readNewPassword, submit } from "./password-fields";
 
 type Mode = "signin" | "signup" | "forgot";
@@ -38,7 +38,9 @@ export function LoginForm({ initialError }: { initialError?: string | null }) {
       const supabase = supabaseBrowser();
 
       if (mode === "forgot") {
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: confirmUrl("/reset-password") });
+        const { error } = await supabaseEmailLinkClient().auth.resetPasswordForEmail(email, {
+          redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+        });
         // 가입 여부를 노출하지 않도록 결과와 관계없이 같은 안내 (요청 제한 오류만 별도 표시)
         if (error && error.status === 429) {
           setError("요청이 너무 많습니다. 잠시 후 다시 시도하세요.");

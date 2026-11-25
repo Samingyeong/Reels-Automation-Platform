@@ -75,3 +75,27 @@ test("재설정 화면은 링크 없이 접근할 수 없다", async ({ page }) 
   await page.goto("/reset-password");
   await expect(page).toHaveURL(/\/login\?error=reset_link_invalid/);
 });
+
+test("재설정 메일 링크(Supabase verify → /auth/callback)는 요청하지 않은 브라우저에서도 동작", async ({ page, baseURL }) => {
+  const email = `xdev-${Date.now()}@example.test`;
+  const db = admin();
+  expect((await db.auth.admin.createUser({ email, password: "oldpassword1", email_confirm: true })).error).toBeNull();
+  // 메일 본문과 같은 링크 (PKCE code_challenge 없이 발급 → 새 브라우저 컨텍스트에서 열기)
+  const link = await db.auth.admin.generateLink({
+    type: "recovery",
+    email,
+    options: { redirectTo: `${baseURL}/auth/callback?next=/reset-password` },
+  });
+  expect(link.error).toBeNull();
+  await page.goto(link.data.properties!.action_link);
+  await expect(page).toHaveURL(/\/reset-password$/);
+  await page.locator("#password").fill("crossdevice1");
+  await page.locator("#password-confirm").fill("crossdevice1");
+  await page.getByRole("button", { name: "비밀번호 변경" }).click();
+  await expect(page).toHaveURL(/\/$/);
+});
+
+test("콜백에 토큰이 없으면 로그인 화면으로 안내", async ({ page }) => {
+  await page.goto("/auth/callback?next=/reset-password#error=access_denied&error_code=otp_expired");
+  await expect(page).toHaveURL(/\/login\?error=reset_link_invalid/);
+});
