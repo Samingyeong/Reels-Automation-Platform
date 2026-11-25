@@ -43,4 +43,15 @@ describe("서버 환경 설정 (local / cloud 분리)", () => {
   it("빈 값은 미설정으로 취급", () => {
     expect(parseServerEnv({ ...base, JOB_DISPATCH_MODE: "", TRIGGER_SECRET_KEY: "" }).JOB_DISPATCH_MODE).toBe("inline");
   });
+
+  it("cloud 임시 실행 모드는 두 변수를 모두 명시해야만 inline", () => {
+    expect(parseServerEnv({ ...base, VERCEL: "1", CLOUD_TEMPORARY_INLINE: "1", JOB_DISPATCH_MODE: "inline" })).toMatchObject({
+      APP_ENV: "cloud",
+      JOB_DISPATCH_MODE: "inline",
+      TEMPORARY_INLINE: true,
+    });
+    expect(() => parseServerEnv({ ...base, VERCEL: "1", CLOUD_TEMPORARY_INLINE: "1" })).toThrow(EnvConfigError);
+    expect(() => parseServerEnv({ ...base, VERCEL: "1", JOB_DISPATCH_MODE: "inline", TRIGGER_SECRET_KEY: "tr_prod_x" })).toThrow(EnvConfigError);
+    expect(parseServerEnv({ ...base, VERCEL: "1", TRIGGER_SECRET_KEY: "tr_prod_x" }).TEMPORARY_INLINE).toBe(false);
+  });
 });

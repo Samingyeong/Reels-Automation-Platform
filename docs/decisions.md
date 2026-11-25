@@ -228,3 +228,8 @@
 - **DB 단계 (첫 live provider 구현과 함께)**: `user_settings`(사용자별 선택, RLS: 본인 SELECT, 쓰기는 RPC) + `projects.provider_selection jsonb`(생성 시 스냅샷 → 진행 중 프로젝트는 설정 변경 영향 없음, jobInputKey 에 provider 이름 포함) + 설정 화면(카탈로그의 `catalogForClient()` 표시, planned 는 비활성). 선택지가 Mock 뿐인 지금 화면을 만들면 의미 없는 UI 가 되므로 미룬다.
 - **이미지+모션**: `SceneVisual.image` 에 Ken Burns(줌·팬) 모션을 `ReelComposition` 에 추가 (Remotion 공식 skill 가이드 기준), 이미지 provider 구현 시 함께.
 - **재검토 조건**: 후보 평가(docs/08 §7) 결과 확정 시 해당 항목을 `available` 로 전환.
+
+### DR-015 예외: cloud 임시 실행 모드 (2026-11-25, 사용자 승인)
+- Trigger.dev prod 배포 차단(docs/09) 동안 Vercel 에 `JOB_DISPATCH_MODE=inline` + `CLOUD_TEMPORARY_INLINE=1` 을 **둘 다 명시**해야만 웹 서버(after())에서 작업을 실행한다. 하나만 있으면 설정 오류로 거부.
+- 렌더 작업은 실행하지 않고 queued 로 보류 (`HoldKindsDispatcher`) — Vercel 함수에는 렌더러가 없고, 성공을 흉내내지 않는다. 화면 상단에 임시 모드 배너.
+- 해제: Trigger.dev 배포 성공 후 두 변수 삭제 → 재배포. 보류된 render 작업은 sweep 이 실행한다.

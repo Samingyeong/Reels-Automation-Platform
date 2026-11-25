@@ -3,7 +3,7 @@ import { after, NextResponse } from "next/server";
 import { requireUser, type AuthContext } from "./auth";
 import { EnvConfigError, serverEnv } from "./env";
 import { ServiceError } from "./errors";
-import { drainOutbox, InlineDispatcher, NoopDispatcher, type JobDispatcher } from "./jobs/dispatcher";
+import { drainOutbox, HoldKindsDispatcher, InlineDispatcher, NoopDispatcher, type JobDispatcher } from "./jobs/dispatcher";
 import { runJob } from "./jobs/runner";
 import { TriggerDispatcher } from "./jobs/trigger-dispatcher";
 import { createWorkerDeps } from "./jobs/worker-deps";
@@ -15,13 +15,16 @@ let lastInlineSweep = 0;
 export function buildServiceDeps(): ServiceDeps {
   const worker = createWorkerDeps();
   const admin = worker.db;
-  const mode = serverEnv().JOB_DISPATCH_MODE;
+  const env = serverEnv();
+  const mode = env.JOB_DISPATCH_MODE;
   let dispatcher: JobDispatcher;
   if (mode === "trigger") {
     dispatcher = new TriggerDispatcher(admin);
   } else if (mode === "inline") {
     // 응답을 보낸 뒤 같은 런타임에서 실행 (next/server after). Trigger.dev 없는 로컬 개발·E2E 용.
-    const inline = new InlineDispatcher(admin, (id) => runJob(worker, id), (task) => after(task));
+    const runInline = new InlineDispatcher(admin, (id) => runJob(worker, id), (task) => after(task));
+    // cloud 임시 실행 모드: Vercel 함수에는 렌더러가 없으므로 render 는 실행하지 않고 대기시킨다
+    const inline = env.TEMPORARY_INLINE ? new HoldKindsDispatcher(admin, runInline, ["render"]) : runInline;
     dispatcher = inline;
     // 서버 재시작 등으로 남은 작업 회수 (Trigger.dev 모드에서는 sweep-outbox 스케줄 태스크가 담당)
     if (Date.now() - lastInlineSweep > 30_000) {

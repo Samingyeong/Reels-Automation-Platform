@@ -19,6 +19,11 @@ const Raw = z.object({
   /** trigger | inline | none(테스트). local 에서 미설정 시 TRIGGER_SECRET_KEY 가 있으면 trigger, 없으면 inline */
   JOB_DISPATCH_MODE: z.enum(["inline", "trigger", "none"]).optional(),
   TRIGGER_SECRET_KEY: z.string().min(1).optional(),
+  /**
+   * 임시 실행 모드 (DR-015 예외, 사용자 승인 2026-11-25): Trigger.dev prod 배포가 막힌 동안
+   * cloud 에서 JOB_DISPATCH_MODE=inline 을 **명시적으로** 허용한다. 렌더 작업은 실행하지 않고 대기시킨다.
+   */
+  CLOUD_TEMPORARY_INLINE: z.literal("1").optional(),
 });
 
 export type ServerEnv = {
@@ -28,6 +33,8 @@ export type ServerEnv = {
   SUPABASE_SECRET_KEY: string;
   JOB_DISPATCH_MODE: "inline" | "trigger" | "none";
   TRIGGER_SECRET_KEY?: string;
+  /** cloud 임시 실행 모드 여부 (UI 배지·렌더 보류) */
+  TEMPORARY_INLINE: boolean;
 };
 
 export class EnvConfigError extends Error {
@@ -49,7 +56,11 @@ export function parseServerEnv(source: Record<string, string | undefined>): Serv
   const d = parsed.data;
   const appEnv = d.APP_ENV ?? (d.VERCEL === "1" ? "cloud" : "local");
 
-  if (appEnv === "cloud") {
+  const temporaryInline = appEnv === "cloud" && d.CLOUD_TEMPORARY_INLINE === "1" && d.JOB_DISPATCH_MODE === "inline";
+  if (appEnv === "cloud" && d.CLOUD_TEMPORARY_INLINE === "1" && d.JOB_DISPATCH_MODE !== "inline") {
+    throw new EnvConfigError("CLOUD_TEMPORARY_INLINE=1 은 JOB_DISPATCH_MODE=inline 과 함께만 사용할 수 있습니다.");
+  }
+  if (appEnv === "cloud" && !temporaryInline) {
     if (d.JOB_DISPATCH_MODE && d.JOB_DISPATCH_MODE !== "trigger") {
       throw new EnvConfigError(`APP_ENV=cloud 에서는 JOB_DISPATCH_MODE=${d.JOB_DISPATCH_MODE} 를 사용할 수 없습니다 (trigger 만 허용).`);
     }
@@ -61,13 +72,18 @@ export function parseServerEnv(source: Record<string, string | undefined>): Serv
     }
   }
 
+  if (temporaryInline && /127\.0\.0\.1|localhost/.test(d.NEXT_PUBLIC_SUPABASE_URL)) {
+    throw new EnvConfigError("APP_ENV=cloud 인데 Supabase URL 이 로컬 주소입니다.");
+  }
+
   return {
     APP_ENV: appEnv,
+    TEMPORARY_INLINE: temporaryInline,
     NEXT_PUBLIC_SUPABASE_URL: d.NEXT_PUBLIC_SUPABASE_URL,
     NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: d.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
     SUPABASE_SECRET_KEY: d.SUPABASE_SECRET_KEY,
     TRIGGER_SECRET_KEY: d.TRIGGER_SECRET_KEY,
-    JOB_DISPATCH_MODE: appEnv === "cloud" ? "trigger" : (d.JOB_DISPATCH_MODE ?? (d.TRIGGER_SECRET_KEY ? "trigger" : "inline")),
+    JOB_DISPATCH_MODE: temporaryInline ? "inline" : appEnv === "cloud" ? "trigger" : (d.JOB_DISPATCH_MODE ?? (d.TRIGGER_SECRET_KEY ? "trigger" : "inline")),
   };
 }
 
