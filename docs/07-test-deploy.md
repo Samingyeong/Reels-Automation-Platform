@@ -59,7 +59,7 @@
 | --- | --- | --- |
 | lint | ✅ | ✅ run #1 (`c1403ce`) |
 | typecheck | ✅ | ✅ run #1 |
-| unit test | ✅ 45/45 | ✅ run #1 (당시 32/32) |
+| unit test | ✅ 45/45 | ✅ run #2 45/45 (run #1 당시 32/32) |
 | build | ✅ | ✅ run #1 |
 | 로컬 Supabase 기동 + 마이그레이션 2개 | ✅ (`SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io`) | ✅ run #1 (기본 레지스트리) |
 | db lint / advisors | ✅ 0건 / 0건 | ✅ run #1 |
@@ -74,3 +74,4 @@ GitHub Actions run 링크: [run #1](https://github.com/Samingyeong/Reels-Automat
 | run | 커밋 | verify | db-integration | 비고 |
 | --- | --- | --- | --- | --- |
 | #1 | `c1403ce` | ✅ | ✅ 22/22 | 경고: actions v4 의 Node 20 deprecated → v5 로 갱신 |
+| [#2](https://github.com/Samingyeong/Reels-Automation-Platform/actions/runs/45534626173) | `eb7c698` | ✅ (unit 45) | ✅ 22/22, db lint·advisors·types diff 통과 | actions v5, 경고 없음 |
