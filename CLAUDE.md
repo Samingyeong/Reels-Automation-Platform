@@ -17,7 +17,11 @@ Python 서버, FastAPI, n8n, Redis, Inngest 는 도입하지 않는다.
 ## 명령
 ```
 npm run db:start          # 로컬 Supabase (Docker). 이 클라우드 환경에선 SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io
-npm run dev               # Next.js (JOB_DISPATCH_MODE=inline 이면 작업을 응답 후 같은 프로세스에서 실행)
+npm run env:local         # 로컬 Supabase 접속 정보로 .env.local 생성
+npm run dev               # Next.js (TRIGGER_SECRET_KEY 없으면 inline: 작업을 응답 후 같은 프로세스에서 실행)
+npm run remotion:bundle   # 렌더용 Remotion 사전 번들 (.remotion-bundle). build 에 포함
+npm run test:e2e          # Playwright 전체 흐름 (npm run build 후)
+npm run trigger:dev       # Trigger.dev 로컬 워커 (로그인·TRIGGER_PROJECT_REF 필요)
 npm run remotion          # Remotion Studio
 npm test                  # 단위 테스트
 npm run test:integration  # 통합 테스트 (로컬 Supabase 필요)
@@ -28,6 +32,7 @@ npm run db:reset && npx supabase db lint --fail-on warning && npx supabase db ad
 - 의존성은 정확한 버전으로 추가 (`npm install -E`). install script 가 필요한 패키지는 `npm install-scripts approve <pkg>`.
 - Remotion 패키지는 모두 **같은 정확한 버전**으로 고정한다 (`npx remotion upgrade`).
 - 마이그레이션은 `npx supabase migration new <name>` 으로 생성, 커밋된 마이그레이션은 수정하지 않는다.
+- 이 클라우드 개발 환경에서는 Node 가 프록시를 직접 쓰지 않아, 실제 렌더(Chromium 다운로드)가 있는 명령 앞에 `NODE_USE_ENV_PROXY=1` 을 붙인다 (DR-013).
 
 ## 절대 규칙
 1. **승인 없이 다음 단계 금지.** 상태 변경은 반드시 `src/domain/pipeline.ts` 의 `transition()` 을 거쳐 `apply_transition` RPC 한 번으로 반영한다 (`src/server/project-service.ts`, `src/server/jobs/runner.ts`). 직접 `status` 를 UPDATE 하지 않는다.
@@ -35,7 +40,7 @@ npm run db:reset && npx supabase db lint --fail-on warning && npx supabase db ad
 3. **임의 성공 표시 금지.** `*_SUCCEEDED` / `PUBLISHED` 는 워커가 실제 결과물(Storage 객체, IG media id)을 저장한 뒤에만. Mock 결과는 UI 에 MOCK 표시. 테스트를 통과시키려고 성공을 흉내내지 않는다.
 4. **외부 API 는 provider 인터페이스 뒤에서만** (`src/providers/types.ts`). 라우트·컴포넌트에서 SDK 직접 호출 금지.
 5. **API 키는 서버 전용.** `src/providers`, `src/server`, `src/trigger` 를 `"use client"` 모듈에서 import 금지. `NEXT_PUBLIC_` 는 Supabase URL·anon key 만.
-6. **장시간 작업은 백그라운드.** Route Handler 는 `jobs`(outbox) 를 트랜잭션 안에서 만들고 커밋 후 디스패치만 한다. 외부 호출은 커밋 이후. M2 부터 Trigger.dev.
+6. **장시간 작업은 백그라운드.** Route Handler 는 `jobs`(outbox) 를 트랜잭션 안에서 만들고 커밋 후 디스패치만 한다. 실행은 Trigger.dev 태스크(`src/trigger/jobs.ts`)가 `runJob()` 을 호출 (로컬은 inline). 작업 로직을 태스크 파일에 쓰지 않는다 (DR-011).
 7. **멱등성.** 외부 호출 작업은 `jobInputKey()` 로 키를 만들고, Trigger.dev 키는 `idempotencyKeys.create(key, { scope: "global" })`. 발행은 `ig_container_id`/`ig_media_id` 를 단계마다 즉시 저장하고 있으면 재사용.
 8. **실제 Instagram 게시·유료 API 실호출은 사용자 승인 후에만.** 기본값 `PROVIDER_MODE=mock`, `PUBLISH_MODE=mock`. CI 에서 live 호출 금지.
 9. **공통 계약(★ docs/06) 은 계약 변경 절차 없이 수정하지 않는다.**
@@ -45,7 +50,9 @@ npm run db:reset && npx supabase db lint --fail-on warning && npx supabase db ad
 
 ## 코드 규칙
 - 입력 검증은 zod (`src/domain/schemas.ts` 재사용). Remotion 컴포지션 props 도 같은 스키마.
-- Player 미리보기와 서버 렌더는 같은 `ReelComposition` + 같은 props 를 쓴다.
+- Player 미리보기와 서버 렌더는 같은 `ReelComposition` + 같은 props(`resolveCompositionPlan`) 를 쓴다.
+- UI: shadcn/ui(`src/components/ui`, `npx shadcn@4.23.0 add`) + 스튜디오 컴포넌트(`src/components/studio`). 서버 응답 타입은 `import type` 으로만 공유. Remotion Player 는 `next/dynamic` 으로 지연 로드.
+- E2E 셀렉터는 `data-testid` 를 쓴다. 작업 완료 대기는 `stage-panel[data-pending=false]` + `status-pill[data-status]`.
 - 새 상태/이벤트는 `pipeline.test.ts` 에 허용·거부 케이스를 함께 추가.
 - Supabase 는 자주 바뀐다: 구현 전 공식 문서·changelog 확인 (`supabase` skill).
 - 커밋 전 `npm run ci` 통과. 실패를 숨기거나 테스트를 skip 하지 않는다.

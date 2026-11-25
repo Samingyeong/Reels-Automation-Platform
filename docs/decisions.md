@@ -15,6 +15,10 @@
 | DR-008 | 원자적 상태 전이 + Outbox(jobs) 디스패치 | 채택 |
 | DR-009 | DB 보안 모델 (명시적 GRANT, service_role 전용 RPC) | 채택 |
 | DR-010 | 로컬 Supabase: CLI v3, Docker Hub 이미지 | 채택 |
+| DR-011 | 백그라운드 작업 Trigger.dev 이전 방식 | 채택 (클라우드 연결은 계정 필요) |
+| DR-012 | 장면 단위 작업 키·결과 반영·재사용 | 채택 (DR-008 보완) |
+| DR-013 | 렌더: Remotion 사전 번들 + Node SSR | 채택 |
+| DR-014 | 진행 상태 표시: DB 폴링 (Realtime 보류) | 채택 |
 
 ---
 
@@ -166,3 +170,39 @@
 - **결정**: Supabase CLI `supabase@3.4.0` 을 devDependency 로 고정. v3 는 **로컬이 기본 대상**이고 원격 변경은 `--remote --yes` 필요(2026-11-04 Breaking Change) → 실수로 운영 DB 를 건드릴 위험 감소. 설정 파일은 `supabase/config.jsonc`.
 - 이 클라우드 개발 환경은 ECR CDN(`*.cloudfront.net`)이 차단되어 `SUPABASE_INTERNAL_IMAGE_REGISTRY=docker.io` 로 이미지를 받는다. GitHub Actions 는 기본 레지스트리 사용.
 - 사용하지 않는 컨테이너는 제외하고 시작(`npm run db:start`): studio, imgproxy, edge-runtime, logflare, vector, supavisor, mailpit, realtime, postgres-meta.
+
+## DR-011 백그라운드 작업 Trigger.dev 이전 방식
+
+- **상태**: 채택 (2026-11-25, M2). 코드·설정 완료, **Trigger.dev 클라우드 연결은 사용자 계정 필요**.
+- **결정**
+  - Trigger.dev 태스크는 얇은 래퍼: `pipeline-job`(small-1x), `render-job`(large-1x), `sweep-outbox`(1분 cron). 실행·재시도·상태 전이 로직은 모두 `runJob()` 에 있다 → 같은 코드가 inline 모드와 Trigger.dev 에서 동작.
+  - 태스크 자체 재시도는 끔(`maxAttempts: 1`). 재시도는 DB(`jobs.attempt`, `run_after`)가 관리하고 스윕이 다시 전달한다 → 재시도 정책이 한 곳에만 있다.
+  - 디스패처: `TriggerDispatcher` 가 `tasks.trigger<typeof task>(id, { jobId })` 를 **타입 전용 import** 로 호출, 멱등 키는 `idempotencyKeys.create(\`job:{id}:a{attempt}:d{dispatch}\`, { scope: "global" })` (trigger-tasks skill: v4.3.1+ 문자열 키 기본 scope 는 run).
+  - 모드 선택: `JOB_DISPATCH_MODE` 미설정 시 `TRIGGER_SECRET_KEY` 가 있으면 `trigger`, 없으면 `inline`(로컬 개발·E2E). inline 은 응답 후 `after()` 로 실행하고, 재시도는 프로세스 내 타이머 + 요청 시 스윕으로 회수.
+  - 빌드: `additionalFiles(.remotion-bundle/**)`, `aptGet`(Remotion Linux 의존성 목록), `external: @remotion/renderer`, Next 의 `server-only` 가드는 `esbuildPlugin` 으로 빈 모듈 대체.
+- **검증**: 태스크 파일을 같은 esbuild 설정으로 번들 → Node 에서 로드 → 태스크 3개 등록 확인. TriggerDispatcher 단위 테스트(SDK mock). `trigger.dev deploy --dry-run` 은 로그인이 필요해 미실행.
+- **남은 사용자 작업**: Trigger.dev 로그인·프로젝트 생성(사람의 인증 필요, trigger-setup skill) → `TRIGGER_PROJECT_REF`, `TRIGGER_SECRET_KEY` 설정 → `npm run trigger:dev` 또는 `trigger:deploy`. Trigger.dev 실행 환경 변수: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `PROVIDER_MODE`, `PUBLISH_MODE`.
+- **비용 메모**: Trigger.dev 는 실행 시간 과금(무료 크레딧 포함). 렌더는 large-1x 로 15초 영상 기준 로컬 측정 수십 초 — 클라우드 첫 실행 후 실측해 DR-005 에 기록.
+
+## DR-012 장면 단위 작업 키·결과 반영·재사용 (DR-008 보완)
+
+- **문제**: M1 의 장면 작업 멱등 키(입력 해시)는 같은 프롬프트로 "다시 생성" 하면 이미 성공한 작업과 충돌해 작업이 만들어지지 않아 `SCENES_GENERATING` 에서 멈출 수 있었다.
+- **결정**
+  - 장면·나레이션 작업 키 = `{kind}:{sceneId}:r{전이 revision}` → 같은 전이의 중복 enqueue(더블 클릭)는 막고, 새 재생성 요청은 새 작업. 입력 해시(`jobInputKey`)는 `payload.inputKey` 와 결과(`*_input_hash`, `assets.input_key`)에 기록.
+  - **비용 중복 방지는 대상 선택으로**: ready 인 장면은 enqueue 하지 않는다. 대상 = 명시한 장면 + ready 가 아닌 장면(pending·stale·failed).
+  - 생성 단계로 들어가는데 대상이 0개면(예: 영상 입력이 바뀌지 않은 재승인) 도메인 상태 머신으로 `*_SUCCEEDED` 까지 한 번에 전이해 다음 검수로 이동.
+  - 장면 결과 반영 `complete_scene_part()`: 작업 완료 + 장면 결과 + (해당 파트 장면이 모두 끝났으면) 프로젝트 전이를 한 트랜잭션에서. 목표 상태는 호출자가 `transition()` 으로 계산해 전달.
+  - 특정 장면 수정·재생성: 장면 검수 중이면 `REGENERATE_SCENES`, 수정이 있거나 장면 승인 이후 단계면 `EDIT_SCENE`(장면·최종 승인 초기화, 렌더 무효·예약 취소) → `REGENERATE_SCENES`. 나레이션은 `REGENERATE_NARRATION` + 문구 수정 op (최종 승인만 초기화).
+
+## DR-013 렌더: Remotion 사전 번들 + Node SSR
+
+- **결정**: `npm run remotion:bundle` 로 `.remotion-bundle` 을 만들고(빌드 스크립트에 포함), 렌더는 `@remotion/renderer` 의 `selectComposition` + `renderMedia`(h264, aac 128k, yuv420p, enforceAudioTrack). 요청마다 webpack 번들을 하지 않는다 (remotion-saas/remotion-render skill). Player 미리보기와 렌더는 같은 `ReelComposition` + 같은 `resolveCompositionPlan()` 결과를 쓴다.
+- 최종 승인 시 컴포지션 계획(asset id 기준)과 해시를 `renders` 에 고정 → 렌더는 승인한 내용 그대로. 서명 URL 은 렌더 시점에 2시간짜리로 발급.
+- **검증**: 실제 렌더 테스트에서 MP4 박스 순서 `ftyp → moov → mdat`(faststart), `avc1`·`mp4a` 트랙 확인 (Instagram 규격 DR-003).
+- 이 클라우드 개발 환경은 Node 가 프록시를 직접 쓰지 않아 Remotion 의 Chromium 다운로드 시 `NODE_USE_ENV_PROXY=1` 이 필요하다 (GitHub Actions·일반 환경은 불필요).
+
+## DR-014 진행 상태 표시: DB 폴링 (Realtime 보류)
+
+- **결정**: 스튜디오는 `GET /api/projects/:id` 를 생성·렌더 중 1.5초, 검수 중 10초 간격으로 폴링하고 탭 복귀 시 갱신한다. 상태의 진실 공급원이 DB 이므로 새로고침·브라우저 종료 후에도 그대로 복원된다. 선택한 장면은 URL(`?scene=`), 저장 전 대본 초안은 localStorage(같은 revision 일 때만 복원).
+- **이유**: 개인용 MVP 에서 동시 사용자가 적고, Realtime 은 로컬 스택 추가 컨테이너·RLS 구독 설정이 필요해 이득 대비 복잡도가 크다. 폴링 응답의 서명 URL 이 바뀌어도 Player 가 다시 로드되지 않도록 최종 해시가 같으면 이전 미리보기 props 를 재사용.
+- **재검토 조건**: 다중 사용자·협업 편집, 또는 폴링 부하가 문제가 될 때 Supabase Realtime(`projects`, `scenes`, `jobs` 는 이미 publication 에 포함) 으로 전환.

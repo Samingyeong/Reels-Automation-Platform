@@ -55,6 +55,11 @@ auth.users 1─┬─< instagram_accounts
 `apply_transition` op 종류: `replace_script`, `revoke_approvals`, `record_approval`, `mark_scenes_stale`, `invalidate_render`, `cancel_scheduled_publication`(예약 + 대기 중 publish 작업 취소), `enqueue`(멱등 키 충돌 시 무시), `complete_job`, `fail_job`.
 TS 쪽 생성: [`src/server/ops.ts`](../src/server/ops.ts) `effectsToOps()`.
 
+### M2 추가 (`20261125025933_m2_scene_parts_render.sql`)
+- `complete_scene_part(job, ok, result, error, running, success, failure, success_event, failure_event)`: 장면 작업 결과(placeholder 또는 asset, 나레이션 길이·자막) 반영 + 작업 완료/실패 + 해당 파트 장면 집계 → 모두 끝났으면 프로젝트 전이. `REVISION_CONFLICT` 면 러너가 작업 취소.
+- `apply_transition` op 추가: `update_scene`(장면 하나의 프롬프트·길이·나레이션, 바뀐 파트만 stale), `create_render`(최종 승인 시 계획·해시 고정), `complete_render`(asset + 렌더 succeeded), `fail_render`. `enqueue` 는 장면 작업이면 해당 장면을 `generating` 으로 표시.
+- `_insert_asset()` 공통 함수. 모든 함수 service_role 전용.
+
 ### 장면 결과물 보존 규칙 (`replace_script`)
 - 장면 id 를 유지한 채 `visual_prompt`/`duration_sec` 가 바뀌면 `visual_status` → 결과물이 있으면 `stale`, 없으면 `pending`. `narration` 이 바뀌면 `narration_status` 동일 규칙.
 - 바뀌지 않은 장면은 상태·결과물 유지 → 재승인 후 재생성 대상에서 제외(비용 중복 방지).

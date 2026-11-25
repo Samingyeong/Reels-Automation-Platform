@@ -68,9 +68,9 @@ docs/                      설계 문서
 - `REGENERATE_SCENES { sceneIds }` → 해당 장면만 `visual_status=generating`, 장면 job 만 큐잉.
 - 워커는 장면 하나 완료 시 `aggregateSceneStatuses()` 로 전체 집계 → 전부 ready 면 `SCENES_SUCCEEDED` 보고.
 
-### 4.3 렌더
+### 4.3 렌더 (M2 구현, DR-013)
 - final 승인 시점의 `ReelCompositionProps` 스냅샷과 `composition_hash` 를 `renders` 에 저장.
-- `render-reel` 태스크: Remotion 번들(빌드 시 생성된 정적 번들 사용) → `selectComposition` → `renderMedia(h264)` → Storage `media/{user}/{project}/render/{renderId}.mp4` 업로드 → `assets` 기록 → `RENDER_SUCCEEDED`.
+- `render-job` 태스크(Trigger.dev large-1x) / inline: `.remotion-bundle` → `selectComposition` → `renderMedia(h264+aac)` → Storage `media/{user}/{project}/render/{renderId}.mp4` 업로드 → `complete_render` op 로 asset·렌더·작업·상태(RENDERED)를 한 트랜잭션에 반영.
 - 장면 영상·오디오는 Storage signed URL 로 컴포지션에 전달(렌더 시간 + 여유로 만료 설정).
 
 ### 4.4 예약 발행

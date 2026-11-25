@@ -4,7 +4,7 @@ AI 숏폼 콘텐츠 제작 및 Instagram Reels 자동 예약 발행 서비스.
 
 주제 입력 → AI 대본 → **승인** → 장면별 영상 생성 → **승인** → AI 나레이션·자막 → 최종 미리보기 **승인** → MP4 자동 렌더(Storage) → 예약 → Instagram 자동 발행 → 성과 수집.
 
-> 현재 단계: **M1 완료 (데이터 계층·대본 API)**. 전체 계획은 [docs/06-work-plan.md](docs/06-work-plan.md), 결정 기록은 [docs/decisions.md](docs/decisions.md).
+> 현재 단계: **M2 완료 (Mock provider 로 대본 → 장면 → 나레이션·자막 → MP4 렌더까지 웹 스튜디오에서 검수)**. 전체 계획은 [docs/06-work-plan.md](docs/06-work-plan.md), 결정 기록은 [docs/decisions.md](docs/decisions.md).
 
 ## 시작하기
 
@@ -12,8 +12,9 @@ AI 숏폼 콘텐츠 제작 및 Instagram Reels 자동 예약 발행 서비스.
 npm install -g npm@11.21.3   # npm 10 은 이 의존성 트리에서 install 버그가 있음 (DR-006)
 npm install
 npm run db:start             # 로컬 Supabase (Docker 필요)
-cp .env.example .env.local   # npx supabase status -o env 값으로 채움
-npm run dev                  # http://localhost:3000
+npm run env:local            # .env.local 생성 (로컬 Supabase 키, Mock provider, inline 작업 실행)
+npm run build && npm start   # http://localhost:3000 → 가입 → 주제 입력
+npm run test:e2e             # Playwright 로 전체 흐름 검증
 npm run test:integration     # 로컬 Supabase 통합 테스트
 npm run ci                   # lint + typecheck + test + build
 ```
@@ -30,7 +31,7 @@ npm run ci                   # lint + typecheck + test + build
 | [05-providers](docs/05-providers.md) | 외부 API 추상화, Mock |
 | [06-work-plan](docs/06-work-plan.md) | 마일스톤, 이슈, 파일 소유권 |
 | [07-test-deploy](docs/07-test-deploy.md) | 테스트·CI·배포, 검증 기록 |
-| [decisions](docs/decisions.md) | 결정 기록 (DR-001~010) |
+| [decisions](docs/decisions.md) | 결정 기록 (DR-001~014) |
 
 ## 기반
 

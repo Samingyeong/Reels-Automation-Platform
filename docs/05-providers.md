@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 공통 | `info: ProviderInfo`, `estimateCostUsd(req)` | 언어·상업적 이용·async·장면 단위 생성·근거 URL / 호출 전 예상 비용 (생성 계열) |
 | `ScriptProvider` | `generateScript(ScriptInput) → Script` | 결과는 반드시 `Script.parse` 통과 (러너가 재검증, 실패 시 재시도 불가 오류) |
-| `SceneVideoProvider` | `start(req) → processing/completed/failed`, `poll(externalJobId)` | 비동기 API 대응. `external_job_id` 를 DB 에 저장해 워커 재시작 후 폴링 재개 |
+| `SceneVideoProvider` | `start(req) → processing/completed/failed`, `poll(externalJobId)` | 비동기 API 대응. `external_job_id` 를 DB 에 저장해 워커 재시작 후 폴링 재개 (M2 구현). `req.variation`: 같은 프롬프트 재생성 시 다른 결과용 seed |
 | `SpeechProvider` | `synthesize({text, voiceId, language}) → {audio, durationMs, captions?}` | 타이밍 제공 시 captions 채움 |
 | `CaptionProvider` | `align({text, durationMs, audio}) → Caption[]` | Speech 가 타이밍을 주지 않을 때만 사용 |
 | `PublisherProvider` | 컨테이너 생성 / 상태 / 게시 / permalink / 한도 | 단계 분리 → 단계별 결과를 DB 에 저장하며 진행 |
@@ -50,7 +50,7 @@
 | 대본 | `mock-script` | mock | ✅ | – |
 | 장면 영상 | `mock-scene-video` | mock | ✅ 동기형 placeholder (Remotion 이 색 배경 렌더) | – |
 | 장면 영상 | `mock-scene-video-async` | mock | ✅ 비동기형(start/poll) 모사 | – |
-| 나레이션 | `mock-speech` | mock | ✅ 오디오 없음, 길이 추정 | – |
+| 나레이션 | `mock-speech` | mock | ✅ 단어 타이밍에 맞춘 톤 WAV(실제 파일 → Storage·재생·렌더 경로 검증), 길이 추정 | – |
 | 자막 | `mock-caption` | mock | ✅ 단어 길이 비례 타이밍 | – |
 | 발행 | `mock-publisher` | mock | ✅ 실제 게시 안 함, permalink 없음 | – |
 | 성과 | `mock-insights` | mock | ✅ 빈 결과 | – |

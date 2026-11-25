@@ -68,6 +68,17 @@ ready → stale (수정됨) → generating
 - `APPROVE_SCENES` 서버 가드: 모든 장면 `visual_status = ready` (stale 불가).
 - `APPROVE_FINAL` 서버 가드: 모든 장면 `narration_status = ready`.
 
+### 장면 단위 수정·재생성 (M2, DR-012)
+
+| 사용자 동작 | 이벤트 | 결과 |
+| --- | --- | --- |
+| 장면 검수 중 "이 장면만 다시 생성" | `REGENERATE_SCENES[s]` | 그 장면(+ ready 아닌 장면)만 생성 |
+| 프롬프트·길이 수정 후 재생성, 또는 장면 승인 이후 단계에서 재생성 | `EDIT_SCENE[s]` → `REGENERATE_SCENES[s]` | 장면·최종 승인 초기화, 렌더 무효·예약 취소 |
+| 나레이션 문구 수정·다시 녹음 | `REGENERATE_NARRATION[s]` + 문구 수정 | 최종 승인만 초기화, 그 장면만 TTS·자막 |
+| 대본 재승인인데 바뀐 장면 없음 | `APPROVE_SCRIPT` + `SCENES_SUCCEEDED` | 생성 없이 장면 검수로 |
+
+장면 작업 완료는 `complete_scene_part()` 가 반영하고, 같은 파트 장면이 모두 끝나면 성공(전부 ready) 또는 실패(failed/stale 존재)로 프로젝트를 전이한다.
+
 ## 4. 작업(job) 상태
 
 `queued → running → succeeded | failed`, 사용자 취소·대체 시 `canceled`.

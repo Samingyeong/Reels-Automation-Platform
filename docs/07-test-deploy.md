@@ -8,8 +8,8 @@
 | Provider 계약 | Vitest | 모든 provider 가 같은 계약 테스트 통과. live 는 녹화된 응답(fixture)으로 | ✅ (live 실호출 제외) |
 | 서비스 통합 | Vitest + 로컬 Supabase(`npm run db:start`) | `project-service`, RPC, 작업 러너, RLS, Route Handler | ✅ `npm run test:integration` (CI: db-integration 잡) |
 | 태스크 | Vitest + Trigger.dev 로컬 dev / 태스크 함수 직접 호출 | 재시도·멱등성(같은 키 두 번 → 외부 호출 1회) | ✅ M2 부터 |
-| 렌더 | Remotion `still` / 짧은 `render` | 컴포지션 회귀 (프레임 스냅샷) | 선택 (nightly) |
-| E2E | Playwright (`webapp-testing` skill) | Mock 전체 흐름 | ✅ M2 부터 |
+| 렌더 | 실제 `renderMedia` (`tests/integration/remotion-render.test.ts`) | MP4 박스 순서(faststart)·H.264·AAC | ✅ |
+| E2E | Playwright (`e2e/`, `npm run test:e2e`) | Mock 전체 흐름 + 실제 Remotion 렌더 | ✅ CI db-integration 잡 |
 | 실호출 | 수동 | live provider, Instagram 게시 | ❌ CI 금지, **사용자 승인 후 수동** |
 
 필수 테스트 시나리오
@@ -75,3 +75,20 @@ GitHub Actions run 링크: [run #1](https://github.com/Samingyeong/Reels-Automat
 | --- | --- | --- | --- | --- |
 | #1 | `c1403ce` | ✅ | ✅ 22/22 | 경고: actions v4 의 Node 20 deprecated → v5 로 갱신 |
 | [#2](https://github.com/Samingyeong/Reels-Automation-Platform/actions/runs/45534626173) | `eb7c698` | ✅ (unit 45) | ✅ 22/22, db lint·advisors·types diff 통과 | actions v5, 경고 없음 |
+| [#3](https://github.com/Samingyeong/Reels-Automation-Platform/actions/runs/45534963543) | `3dbc0f1` | ✅ | ✅ | 문서 커밋 |
+| [#4](https://github.com/Samingyeong/Reels-Automation-Platform/actions/runs/45540135784) | `5e91826` (M2) | ✅ (unit 48, build 에 Remotion 번들 포함) | ✅ 통합 28/28 (7 files, 실제 Remotion 렌더 포함) · E2E 2/2 | E2E 32.7초 |
+
+### M2 — 2026-11-25
+
+| 항목 | 로컬 (클라우드 개발 컨테이너) | GitHub Actions run #4 |
+| --- | --- | --- |
+| lint / typecheck / build | ✅ | ✅ |
+| unit test | ✅ 48/48 (Trigger 디스패처, 계약, ops 포함) | ✅ 48/48 |
+| db lint / advisors / 타입 최신성 (마이그레이션 3개) | ✅ 0 / 0 / 최신 | ✅ |
+| integration test | ✅ 28/28 (`NODE_USE_ENV_PROXY=1` 필요, DR-013) | ✅ 28/28 |
+| 실제 Remotion 렌더 (faststart·H.264·AAC) | ✅ | ✅ (Chromium headless shell 다운로드 포함 4.6초) |
+| Playwright E2E (가입 → 대본 수정·승인 → 장면 개별 재생성 → 새로고침 유지 → 나레이션 개별 재녹음 → 실제 MP4 렌더·Storage → 렌더 후 장면 재생성 / 비로그인 차단) | ✅ 2/2 | ✅ 2/2 |
+| 화면 확인 (데스크톱 1440, iPhone 13) | ✅ 스크린샷 확인, 모바일 가로 넘침 수정 | 미실행 |
+| Trigger.dev 태스크 번들·로드 | ✅ esbuild 번들 → 3개 태스크 등록 확인 | 미실행 |
+| Trigger.dev 클라우드 실행 | 미실행 (로그인·프로젝트 필요, DR-011) | 미실행 |
+| 유료 API / 실제 Instagram 게시 | 미실행 (Mock 만 사용) | 미실행 |

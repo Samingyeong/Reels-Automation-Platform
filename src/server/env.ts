@@ -21,7 +21,9 @@ let cached: ServerEnv | null = null;
 
 export function serverEnv(): ServerEnv {
   if (cached) return cached;
-  const parsed = ServerEnv.safeParse(process.env);
+  // 빈 문자열(.env 의 `KEY=`)은 미설정으로 취급
+  const env = Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== undefined && v !== ""));
+  const parsed = ServerEnv.safeParse(env);
   if (!parsed.success) {
     const keys = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
     throw new Error(`서버 환경변수가 올바르지 않습니다: ${keys} (.env.example 참고)`);

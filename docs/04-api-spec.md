@@ -28,7 +28,7 @@ type ProjectSummary = { id: string; status: ProjectStatus; revision: number; upd
 | ✅ GET | `/api/projects/:id` | – | `ProjectDetail` (scenes, approvals 유효여부, jobs 최근, currentRender, publications, contentHashes) | – |
 | DELETE | `/api/projects/:id` | – | `204` | 진행 중 작업 있으면 409 |
 
-`ProjectDetail = { project, scenes, approvals(전체 버전), activeApprovals, jobs(최근 20), contentHashes }`. M1 의 `contentHashes` 는 `{ script }` (scenes·final 은 M2). 화면은 승인 요청 시 이 해시를 그대로 돌려보낸다.
+`ProjectDetail = { project, scenes, approvals(전체 버전), activeApprovals, jobs(최근 20), contentHashes }`. `contentHashes = { script, scenes, final }` (final 은 모든 나레이션이 준비됐을 때만). M2 부터 `scenes[].narration_audio_url`, `visual_url`, `preview`, `render` 포함. 화면은 승인 요청 시 이 해시를 그대로 돌려보낸다.
 
 응답 예 (`POST /api/projects/:id/script/approve` 202): `{ id, status: "SCENES_GENERATING", revision, jobIds: [...] }`
 
@@ -44,25 +44,26 @@ type ProjectSummary = { id: string; status: ProjectStatus; revision: number; upd
 
 | Method | Path | Body | 응답 | 이벤트 |
 | --- | --- | --- | --- | --- |
-| PATCH | `/api/projects/:id/scenes/:sceneId` | `{ revision, visualPrompt?, durationSec? }` | 200 | EDIT_SCENE |
-| POST | `/api/projects/:id/scenes/regenerate` | `{ revision, sceneIds: string[] }` | 202 | REGENERATE_SCENES |
-| POST | `/api/projects/:id/scenes/approve` | `{ revision, contentHash }` | 202 | APPROVE_SCENES |
+| ✅ POST | `/api/projects/:id/scenes/:sceneId/regenerate` | `{ revision, visualPrompt?, durationSec? }` | 202 | (수정·승인 이후면 EDIT_SCENE →) REGENERATE_SCENES |
+| ✅ POST | `/api/projects/:id/scenes/approve` | `{ revision, contentHash }` (`contentHashes.scenes`) | 202 | APPROVE_SCENES |
 
 ## 3. 나레이션·자막·최종 미리보기
 
 | Method | Path | Body | 응답 | 이벤트 |
 | --- | --- | --- | --- | --- |
-| POST | `/api/projects/:id/narration/regenerate` | `{ revision, sceneIds: string[], voiceId? }` | 202 | REGENERATE_NARRATION |
-| PUT | `/api/projects/:id/captions` | `{ revision, scenes: { id, captions: Caption[] }[] }` | 200 | EDIT_CAPTIONS |
-| GET | `/api/projects/:id/preview-props` | – | `ReelCompositionProps` (signed URL 포함, 만료 1h) | – |
-| POST | `/api/projects/:id/final/approve` | `{ revision, contentHash }` | 202 | APPROVE_FINAL |
+| ✅ POST | `/api/projects/:id/scenes/:sceneId/narration` | `{ revision, narration? }` | 202 | REGENERATE_NARRATION (+문구 수정) |
+| PUT | `/api/projects/:id/captions` | `{ revision, scenes: { id, captions: Caption[] }[] }` | 200 | EDIT_CAPTIONS (미구현, 자막은 나레이션 문구 수정으로 대체) |
+| ✅ POST | `/api/projects/:id/final/approve` | `{ revision, contentHash }` (`contentHashes.final`) | 202 | APPROVE_FINAL (+렌더 레코드 고정) |
+
+최종 미리보기 props 는 별도 API 없이 `GET /api/projects/:id` 의 `preview`(서명 URL 포함, 1시간)로 제공한다.
 
 ## 4. 렌더 · 재시도
 
 | Method | Path | Body | 응답 | 이벤트 |
 | --- | --- | --- | --- | --- |
 | ✅ POST | `/api/projects/:id/retry` | `{ revision }` | 202 | RETRY (현재 *_FAILED 단계) |
-| GET | `/api/projects/:id/render` | – | `{ status, videoUrl?(signed), sizeBytes?, durationMs? }` | – |
+
+렌더 결과는 `GET /api/projects/:id` 의 `render: { status, videoUrl(서명), sizeBytes, durationMs, error }`.
 
 사용자가 MP4 를 다운로드·업로드하는 흐름은 제공하지 않는다. 미리보기용 signed URL 만 노출.
 
@@ -95,7 +96,9 @@ type ProjectSummary = { id: string; status: ProjectStatus; revision: number; upd
 
 | Task id | Payload | 멱등 키 | 재시도 | 머신 |
 | --- | --- | --- | --- | --- |
-| `generate-script` | `{ projectId, jobId }` | `script:{provider}:{hash(input)}` + projectId | 3 | small-1x |
+| (M2 실제 구성) `pipeline-job`·`render-job` | `{ jobId }` | `job:{id}:a{attempt}:d{dispatch}` (global) | 0 (DB 가 재시도 관리) | small-1x / large-1x |
+| `sweep-outbox` | cron 1분 | – | – | 기본 |
+| (아래는 M0 설계안, 참고용) `generate-script` | `{ projectId, jobId }` | `script:{provider}:{hash(input)}` + projectId | 3 | small-1x |
 | `generate-scene-video` | `{ projectId, sceneId, jobId }` | `scene_video:{provider}:{hash}` | 3 (외부 폴링은 `wait.for`) | small-1x |
 | `generate-narration` | `{ projectId, sceneIds?, jobId }` | 장면별 `narration:{provider}:{hash}` | 3 | small-1x |
 | `render-reel` | `{ projectId, renderId }` | `render:{renderId}` | 2 | large-1x 이상 |
