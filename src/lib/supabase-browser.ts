@@ -16,6 +16,6 @@ export function supabaseBrowser() {
  */
 export function supabaseEmailLinkClient() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!, {
-    auth: { flowType: "implicit", persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+    auth: { flowType: "implicit", storageKey: "sb-email-link", persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
   });
 }

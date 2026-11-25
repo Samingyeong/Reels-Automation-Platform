@@ -12,6 +12,14 @@ type Mode = "signin" | "signup" | "forgot";
 
 const TITLES: Record<Mode, string> = { signin: "로그인", signup: "가입하고 시작하기", forgot: "재설정 메일 보내기" };
 
+/** 메일 발송 관련 오류 → 사용자 안내. 무료 기본 메일은 시간당 발송 수가 제한된다. */
+function emailErrorMessage(error: { status?: number; code?: string }, fallback: string) {
+  if (error.status === 429 || error.code?.includes("rate_limit")) {
+    return "메일 발송 한도를 초과했습니다 (무료 메일은 시간당 2통). 메일은 보내지지 않았습니다. 1시간쯤 뒤에 다시 시도하세요.";
+  }
+  return fallback;
+}
+
 export function LoginForm({ initialError }: { initialError?: string | null }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
@@ -30,7 +38,7 @@ export function LoginForm({ initialError }: { initialError?: string | null }) {
         options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/` },
       });
       setUnconfirmed(false);
-      if (error) setError(error.status === 429 ? "요청이 너무 많습니다. 잠시 후 다시 시도하세요." : "확인 메일을 보내지 못했습니다.");
+      if (error) setError(emailErrorMessage(error, "확인 메일을 보내지 못했습니다."));
       else setNotice(`${lastEmail} 로 확인 메일을 다시 보냈습니다.`);
     });
   }
@@ -54,9 +62,10 @@ export function LoginForm({ initialError }: { initialError?: string | null }) {
         const { error } = await supabaseEmailLinkClient().auth.resetPasswordForEmail(email, {
           redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
         });
-        // 가입 여부를 노출하지 않도록 결과와 관계없이 같은 안내 (요청 제한 오류만 별도 표시)
-        if (error && error.status === 429) {
-          setError("요청이 너무 많습니다. 잠시 후 다시 시도하세요.");
+        // 미가입 이메일도 Supabase 는 성공(200)으로 응답하므로 가입 여부는 드러나지 않는다.
+        // 오류는 실제 발송 실패(요청 제한·메일 서버 오류)뿐 → "보냈습니다"로 표시하면 안 된다.
+        if (error) {
+          setError(emailErrorMessage(error, "재설정 메일을 보내지 못했습니다. 잠시 후 다시 시도하세요."));
           return;
         }
         setNotice("가입된 이메일이면 비밀번호 재설정 링크를 보냈습니다. 메일함(스팸함 포함)을 확인하세요.");
@@ -76,7 +85,7 @@ export function LoginForm({ initialError }: { initialError?: string | null }) {
           options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/` },
         });
         if (error) {
-          setError(error.status === 429 ? "요청이 너무 많습니다. 잠시 후 다시 시도하세요." : error.message);
+          setError(emailErrorMessage(error, error.message));
           return;
         }
         if (!data.session) {

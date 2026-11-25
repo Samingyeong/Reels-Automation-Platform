@@ -14,7 +14,7 @@
     "render": "remotion render Reel out/reel.mp4 --is-production=false",
     "ci": "npm run lint && npm run typecheck && npm run test && npm run build",
     "test:integration": "vitest run --config vitest.integration.config.mts",
-    "db:start": "supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,mailpit,realtime,postgres-meta",
+    "db:start": "supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,postgres-meta",
     "db:reset": "supabase db reset",
     "db:types": "supabase gen types typescript > src/server/database.types.ts",
     "remotion:bundle": "remotion bundle src/remotion/index.ts --out-dir=.remotion-bundle --quiet",

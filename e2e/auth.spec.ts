@@ -111,3 +111,19 @@ test("이메일 미확인 계정은 '비밀번호 오류'가 아니라 확인 �
   await expect(page.getByTestId("resend-confirmation")).toBeVisible();
   await expect(page.locator("#email")).toHaveValue(email);
 });
+
+test("메일 발송 한도 초과(429)면 '보냈습니다'가 아니라 실패를 안내", async ({ page }) => {
+  await page.route("**/auth/v1/recover**", (route) =>
+    route.fulfill({
+      status: 429,
+      contentType: "application/json",
+      body: JSON.stringify({ code: 429, error_code: "over_email_send_rate_limit", msg: "email rate limit exceeded" }),
+    }),
+  );
+  await page.goto("/login");
+  await page.getByText("비밀번호를 잊으셨나요?").click();
+  await page.locator("#email").fill("someone@example.test");
+  await page.getByRole("button", { name: "재설정 메일 보내기" }).click();
+  await expect(page.getByTestId("auth-error")).toContainText("메일은 보내지지 않았습니다");
+  await expect(page.getByTestId("auth-notice")).toHaveCount(0);
+});
