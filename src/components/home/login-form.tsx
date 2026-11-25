@@ -12,28 +12,41 @@ type Mode = "signin" | "signup" | "forgot";
 
 const TITLES: Record<Mode, string> = { signin: "로그인", signup: "가입하고 시작하기", forgot: "재설정 메일 보내기" };
 
-/** 이메일 링크가 돌아올 주소. /auth/confirm 이 세션을 만든 뒤 next 로 보낸다. */
-function confirmUrl(next: string) {
-  return `${window.location.origin}/auth/confirm?next=${encodeURIComponent(next)}`;
-}
-
 export function LoginForm({ initialError }: { initialError?: string | null }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
   const [error, setError] = useState<string | null>(initialError ?? null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [lastEmail, setLastEmail] = useState("");
+  const [unconfirmed, setUnconfirmed] = useState(false);
+
+  function resendConfirmation() {
+    setError(null);
+    startTransition(async () => {
+      const { error } = await supabaseEmailLinkClient().auth.resend({
+        type: "signup",
+        email: lastEmail,
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/` },
+      });
+      setUnconfirmed(false);
+      if (error) setError(error.status === 429 ? "요청이 너무 많습니다. 잠시 후 다시 시도하세요." : "확인 메일을 보내지 못했습니다.");
+      else setNotice(`${lastEmail} 로 확인 메일을 다시 보냈습니다.`);
+    });
+  }
 
   function switchMode(next: Mode) {
     setMode(next);
     setError(null);
     setNotice(null);
+    setUnconfirmed(false);
   }
 
   function onSubmit(form: FormData) {
     const email = String(form.get("email") ?? "").trim();
     setError(null);
     setNotice(null);
+    setUnconfirmed(false);
     startTransition(async () => {
       const supabase = supabaseBrowser();
 
@@ -56,24 +69,39 @@ export function LoginForm({ initialError }: { initialError?: string | null }) {
           setError(invalid);
           return;
         }
-        const { data, error } = await supabase.auth.signUp({ email, password, options: { emailRedirectTo: confirmUrl("/") } });
+        // implicit 링크: 확인 메일을 다른 기기에서 열어도 /auth/callback 에서 로그인된다
+        const { data, error } = await supabaseEmailLinkClient().auth.signUp({
+          email,
+          password,
+          options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/` },
+        });
         if (error) {
           setError(error.status === 429 ? "요청이 너무 많습니다. 잠시 후 다시 시도하세요." : error.message);
           return;
         }
         if (!data.session) {
           // 이메일 확인이 켜진 환경(클라우드): 메일 링크를 눌러야 로그인된다
-          setNotice(`${email} 로 확인 메일을 보냈습니다. 메일의 링크를 누르면 로그인됩니다.`);
+          setLastEmail(email);
           setMode("signin");
+          setNotice(`${email} 로 확인 메일을 보냈습니다. 메일의 "Confirm" 링크를 눌러야 가입이 완료되고 로그인됩니다. 확인 전에는 비밀번호로 로그인할 수 없습니다.`);
+          return;
+        }
+        const { error: sessionError } = await supabase.auth.setSession(data.session);
+        if (sessionError) {
+          setError("가입은 되었지만 로그인하지 못했습니다. 다시 로그인하세요.");
           return;
         }
       } else {
         const password = String(form.get("password") ?? "");
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
-          setError(
-            error.code === "email_not_confirmed" ? "이메일 확인이 필요합니다. 가입 확인 메일의 링크를 눌러주세요." : "이메일 또는 비밀번호를 확인하세요.",
-          );
+          if (error.code === "email_not_confirmed") {
+            setLastEmail(email);
+            setUnconfirmed(true);
+            setError("아직 이메일 확인이 안 됐습니다. 가입 확인 메일의 링크를 눌러주세요. (비밀번호 문제가 아닙니다)");
+          } else {
+            setError("이메일 또는 비밀번호를 확인하세요.");
+          }
           return;
         }
       }
@@ -89,7 +117,7 @@ export function LoginForm({ initialError }: { initialError?: string | null }) {
       ) : null}
       <div className="space-y-1.5">
         <Label htmlFor="email">이메일</Label>
-        <Input id="email" name="email" type="email" autoComplete="email" required />
+        <Input id="email" name="email" type="email" autoComplete="email" required defaultValue={lastEmail} />
       </div>
 
       {mode === "signin" ? (
@@ -110,6 +138,11 @@ export function LoginForm({ initialError }: { initialError?: string | null }) {
         <p className="text-sm text-destructive" role="alert" data-testid="auth-error">
           {error}
         </p>
+      ) : null}
+      {unconfirmed ? (
+        <Button type="button" variant="outline" className="w-full" disabled={pending} onClick={resendConfirmation} data-testid="resend-confirmation">
+          확인 메일 다시 보내기
+        </Button>
       ) : null}
       {notice ? (
         <p className="rounded-lg bg-muted p-3 text-sm" role="status" data-testid="auth-notice">

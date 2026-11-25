@@ -99,3 +99,15 @@ test("콜백에 토큰이 없으면 로그인 화면으로 안내", async ({ pag
   await page.goto("/auth/callback?next=/reset-password#error=access_denied&error_code=otp_expired");
   await expect(page).toHaveURL(/\/login\?error=reset_link_invalid/);
 });
+
+test("이메일 미확인 계정은 '비밀번호 오류'가 아니라 확인 필요 안내 + 재전송 버튼", async ({ page }) => {
+  const email = `unconfirmed-${Date.now()}@example.test`;
+  expect((await admin().auth.admin.createUser({ email, password: "password123", email_confirm: false })).error).toBeNull();
+  await page.goto("/login");
+  await page.locator("#email").fill(email);
+  await page.locator("#password").fill("password123");
+  await page.getByRole("button", { name: "로그인" }).click();
+  await expect(page.getByTestId("auth-error")).toContainText("이메일 확인이 안 됐습니다");
+  await expect(page.getByTestId("resend-confirmation")).toBeVisible();
+  await expect(page.locator("#email")).toHaveValue(email);
+});
