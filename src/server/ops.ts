@@ -8,6 +8,10 @@ import { VIDEO_HEIGHT, VIDEO_WIDTH, type EditableScript, type Script } from "../
 
 export type DbOp =
   | { op: "replace_script"; script: Script | EditableScript }
+  | { op: "update_scene"; sceneId: string; visualPrompt?: string; durationSec?: number; narration?: string }
+  | { op: "create_render"; compositionHash: string; inputProps: unknown }
+  | { op: "complete_render"; renderId: string; asset: AssetInput }
+  | { op: "fail_render"; renderId: string; error: string }
   | { op: "revoke_approvals"; stages: ApprovalStage[]; reason?: string }
   | { op: "record_approval"; stage: ApprovalStage; contentHash: string; snapshot: unknown }
   | { op: "mark_scenes_stale"; sceneIds: string[]; part: "visual" | "narration" }
@@ -24,6 +28,15 @@ export type DbOp =
     }
   | { op: "complete_job"; jobId: string; result: unknown }
   | { op: "fail_job"; jobId: string; error: string; retryable: boolean };
+
+export type AssetInput = {
+  storagePath: string;
+  mimeType: string;
+  sizeBytes?: number;
+  durationMs?: number;
+  provider: string;
+  inputKey?: string;
+};
 
 export type SceneForEnqueue = {
   id: string;
@@ -91,20 +104,25 @@ function enqueueOps(kind: JobKind, sceneIds: string[] | undefined, ctx: OpsConte
         },
       ];
     case "scene_video": {
-      // 장면 입력 해시 기반 키 → 같은 입력은 이미 성공한 작업이 있으면 다시 만들지 않는다 (비용 중복 방지)
+      // 멱등 키는 전이(revision)마다 고유: 같은 전이의 중복 enqueue 는 막고, "다시 생성" 은 새 작업을 만든다.
+      // 입력 해시(inputKey)는 결과물 재사용·비용 추적용으로 payload 에 둔다.
+      // 이미 ready 인 장면은 선택되지 않으므로 바뀌지 않은 장면은 다시 생성하지 않는다 (비용 중복 방지).
       const targets = selectScenes(ctx.scenes, sceneIds, (s) => s.visualStatus);
       return targets.map((s) => ({
         op: "enqueue" as const,
         kind,
         sceneId: s.id,
         provider: ctx.providerNames.sceneVideo,
-        payload: { sceneId: s.id },
-        idempotencyKey: `${jobInputKey("scene_video", ctx.providerNames.sceneVideo, {
-          prompt: s.visualPrompt,
-          durationSec: s.durationSec,
-          width: VIDEO_WIDTH,
-          height: VIDEO_HEIGHT,
-        })}:${s.id}`,
+        idempotencyKey: `scene_video:${s.id}:r${ctx.nextRevision}`,
+        payload: {
+          sceneId: s.id,
+          inputKey: jobInputKey("scene_video", ctx.providerNames.sceneVideo, {
+            prompt: s.visualPrompt,
+            durationSec: s.durationSec,
+            width: VIDEO_WIDTH,
+            height: VIDEO_HEIGHT,
+          }),
+        },
       }));
     }
     case "narration": {
@@ -114,12 +132,15 @@ function enqueueOps(kind: JobKind, sceneIds: string[] | undefined, ctx: OpsConte
         kind,
         sceneId: s.id,
         provider: ctx.providerNames.speech,
-        payload: { sceneId: s.id },
-        idempotencyKey: `${jobInputKey("narration", ctx.providerNames.speech, {
-          text: s.narration,
-          voiceId: ctx.voiceId,
-          language: ctx.language,
-        })}:${s.id}`,
+        idempotencyKey: `narration:${s.id}:r${ctx.nextRevision}`,
+        payload: {
+          sceneId: s.id,
+          inputKey: jobInputKey("narration", ctx.providerNames.speech, {
+            text: s.narration,
+            voiceId: ctx.voiceId,
+            language: ctx.language,
+          }),
+        },
       }));
     }
     case "render":
@@ -129,15 +150,15 @@ function enqueueOps(kind: JobKind, sceneIds: string[] | undefined, ctx: OpsConte
   }
 }
 
-/** 명시된 장면이 있으면 그것만, 없으면 아직 ready 가 아닌 장면만 대상으로 한다. */
+/**
+ * 대상 장면: 명시한 장면 + 아직 ready 가 아닌 장면(pending·stale·failed).
+ * 수정만 해 둔 다른 장면이 남아 있으면 집계가 끝나지 않으므로 함께 생성한다.
+ */
 function selectScenes(
   scenes: SceneForEnqueue[],
   sceneIds: string[] | undefined,
   status: (s: SceneForEnqueue) => string,
 ): SceneForEnqueue[] {
-  if (sceneIds && sceneIds.length > 0) {
-    const set = new Set(sceneIds);
-    return scenes.filter((s) => set.has(s.id));
-  }
-  return scenes.filter((s) => status(s) !== "ready");
+  const explicit = new Set(sceneIds ?? []);
+  return scenes.filter((s) => explicit.has(s.id) || status(s) !== "ready");
 }

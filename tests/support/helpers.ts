@@ -7,6 +7,7 @@ import type { ServiceDeps } from "../../src/server/project-service";
 import { createAdminClient, createUserClientFromToken, type Db } from "../../src/server/supabase";
 import { createMockProviders } from "../../src/providers/mock";
 import type { Providers } from "../../src/providers/types";
+import type { Renderer } from "../../src/server/render/remotion-renderer";
 
 export function admin(): Db {
   return createAdminClient();
@@ -36,10 +37,20 @@ export async function createTestUser(): Promise<TestUser> {
 /**
  * 테스트용 서비스 의존성. dispatch="inline" 이면 작업을 즉시 실행하고 flush() 로 완료를 기다린다.
  */
-export function testDeps(opts: { dispatch?: "inline" | "none"; providers?: Providers } = {}) {
+/**
+ * 테스트용 렌더러 (Chromium 없이 빠르게). 실제 Remotion 렌더는 E2E(Playwright)에서 검증한다.
+ * 출력은 "가짜 MP4" 바이트이며 성공 경로의 DB·Storage 반영만 확인하기 위한 테스트 더블이다.
+ */
+export const fakeRenderer: Renderer = async (props) => ({
+  data: new TextEncoder().encode(`test-double:${props.scenes.length}`),
+  durationMs: props.scenes.reduce((s, x) => s + x.durationInFrames, 0) * (1000 / 30),
+  mimeType: "video/mp4",
+});
+
+export function testDeps(opts: { dispatch?: "inline" | "none"; providers?: Providers; renderer?: Renderer } = {}) {
   const db = admin();
   const providers = opts.providers ?? createMockProviders();
-  const runnerDeps: RunnerDeps = { db, providers, retryDelaySeconds: () => 0 };
+  const runnerDeps: RunnerDeps = { db, providers, retryDelaySeconds: () => 0, renderer: opts.renderer ?? fakeRenderer };
   const pending: Promise<void>[] = [];
   const dispatcher: JobDispatcher =
     opts.dispatch === "inline"
@@ -49,6 +60,7 @@ export function testDeps(opts: { dispatch?: "inline" | "none"; providers?: Provi
   return {
     deps,
     runnerDeps,
+    /** 작업이 다음 작업을 만들지 않으므로 대기열이 빌 때까지 기다린다 */
     async flush() {
       while (pending.length) await pending.shift();
     },

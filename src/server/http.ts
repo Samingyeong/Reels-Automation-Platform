@@ -1,29 +1,37 @@
 import "server-only";
 import { after, NextResponse } from "next/server";
-import { getProviders } from "../providers/registry";
 import { requireUser, type AuthContext } from "./auth";
 import { serverEnv } from "./env";
 import { ServiceError } from "./errors";
-import { InlineDispatcher, NoopDispatcher, type JobDispatcher } from "./jobs/dispatcher";
+import { drainOutbox, InlineDispatcher, NoopDispatcher, type JobDispatcher } from "./jobs/dispatcher";
 import { runJob } from "./jobs/runner";
+import { TriggerDispatcher } from "./jobs/trigger-dispatcher";
+import { createWorkerDeps } from "./jobs/worker-deps";
 import type { ServiceDeps } from "./project-service";
-import { createAdminClient } from "./supabase";
 
-/** 요청마다 서비스 의존성 구성. 작업 디스패치 방식은 JOB_DISPATCH_MODE 로 선택. */
+let lastInlineSweep = 0;
+
+/** 요청마다 서비스 의존성 구성. 작업 디스패치 방식은 JOB_DISPATCH_MODE 로 선택 (env.ts). */
 export function buildServiceDeps(): ServiceDeps {
-  const admin = createAdminClient();
-  const providers = getProviders();
+  const worker = createWorkerDeps();
+  const admin = worker.db;
   const mode = serverEnv().JOB_DISPATCH_MODE;
   let dispatcher: JobDispatcher;
-  if (mode === "inline") {
-    // 응답을 보낸 뒤 같은 런타임에서 실행 (next/server after). 개발·개인용 MVP 용.
-    dispatcher = new InlineDispatcher(admin, (id) => runJob({ db: admin, providers }, id), (task) => after(task));
-  } else if (mode === "none") {
-    dispatcher = new NoopDispatcher();
+  if (mode === "trigger") {
+    dispatcher = new TriggerDispatcher(admin);
+  } else if (mode === "inline") {
+    // 응답을 보낸 뒤 같은 런타임에서 실행 (next/server after). Trigger.dev 없는 로컬 개발·E2E 용.
+    const inline = new InlineDispatcher(admin, (id) => runJob(worker, id), (task) => after(task));
+    dispatcher = inline;
+    // 서버 재시작 등으로 남은 작업 회수 (Trigger.dev 모드에서는 sweep-outbox 스케줄 태스크가 담당)
+    if (Date.now() - lastInlineSweep > 30_000) {
+      lastInlineSweep = Date.now();
+      after(() => drainOutbox(admin, inline).then(() => undefined).catch(() => undefined));
+    }
   } else {
-    throw new Error("JOB_DISPATCH_MODE=trigger 는 M2 에서 구현됩니다.");
+    dispatcher = new NoopDispatcher();
   }
-  return { admin, dispatcher, providers };
+  return { admin, dispatcher, providers: worker.providers };
 }
 
 type Handler<P> = (ctx: { req: Request; auth: AuthContext; params: P }) => Promise<unknown>;

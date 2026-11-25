@@ -43,13 +43,14 @@ describe("effectsToOps", () => {
     expect(() => effectsToOps(effects("SCRIPT_REVIEW", { type: "APPROVE_SCRIPT" }), ctx())).toThrow();
   });
 
-  it("장면 멱등 키: 같은 입력이면 같은 키, 프롬프트가 바뀌면 다른 키", () => {
-    const e = effects("SCENES_REVIEW", { type: "REGENERATE_SCENES", sceneIds: ["s1"] });
-    const k1 = effectsToOps(e, ctx()).find((o) => o.op === "enqueue");
-    const k2 = effectsToOps(e, ctx({ nextRevision: 99 })).find((o) => o.op === "enqueue");
-    const k3 = effectsToOps(e, ctx({ scenes: [scene("s1", { visualPrompt: "changed" })] })).find((o) => o.op === "enqueue");
-    expect(k1).toEqual(k2);
-    expect(k1).not.toEqual(k3);
+  it("장면 재생성: 명시한 장면 + ready 가 아닌 장면, 키는 전이마다 고유, 입력 해시는 payload", () => {
+    const e = effects("SCENES_REVIEW", { type: "REGENERATE_SCENES", sceneIds: ["s2"] });
+    const enq = effectsToOps(e, ctx()).filter((o) => o.op === "enqueue");
+    expect(enq.map((o) => o.op === "enqueue" && o.sceneId).sort()).toEqual(["s1", "s2"]);
+    const again = effectsToOps(e, ctx({ nextRevision: 6 })).filter((o) => o.op === "enqueue");
+    expect(enq[0]).not.toEqual(again[0]); // 다시 생성 → 새 작업
+    const inputKey = (o: (typeof enq)[number]) => (o.op === "enqueue" ? o.payload?.inputKey : undefined);
+    expect(inputKey(enq[0])).toBe(inputKey(again[0])); // 같은 입력 → 같은 입력 해시
   });
 
   it("대본 생성 키는 revision 마다 달라 재생성 요청이 새 결과를 만든다", () => {

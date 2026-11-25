@@ -253,7 +253,10 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-            "apply_transition":
+            "_insert_asset":
+{ Args: { "p_asset": Json,"p_kind": Database["public"]['Enums']["asset_kind"],"p_project_id": string,"p_user_id": string }; Returns: string
+                           },
+"apply_transition":
 { Args: { "p_actor": string,"p_actor_user_id": string,"p_error"?: string,"p_event": string,"p_expected_revision": number,"p_expected_status": Database["public"]['Enums']["project_status"],"p_ops"?: Json,"p_project_id": string,"p_to_status": Database["public"]['Enums']["project_status"] }; Returns: Json
                            },
 "cancel_job":
@@ -293,6 +296,9 @@ isOneToOne: false
         isOneToOne: true
         isSetofReturn: false
       } },
+"complete_scene_part":
+{ Args: { "p_error": string,"p_failure_event": string,"p_failure_status": Database["public"]['Enums']["project_status"],"p_job_id": string,"p_ok": boolean,"p_result": Json,"p_running_status": Database["public"]['Enums']["project_status"],"p_success_event": string,"p_success_status": Database["public"]['Enums']["project_status"] }; Returns: Json
+                           },
 "list_dispatchable_jobs":
 { Args: { "p_limit"?: number }; Returns: {
               "attempt": number,

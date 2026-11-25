@@ -4,6 +4,7 @@
  */
 import type { Caption, Script, ScriptInput } from "../../domain/schemas";
 import { contentHash } from "../../domain/hash";
+import { synthesizeToneWav } from "./wav";
 import {
   ProviderError,
   type CaptionProvider,
@@ -44,7 +45,10 @@ function injectFault(provider: string, text: string) {
   }
 }
 
-const PALETTE = ["#1e3a8a", "#7c2d12", "#14532d", "#581c87", "#0f766e", "#9f1239"];
+const PALETTE = [
+  "#1e3a8a", "#7c2d12", "#14532d", "#581c87", "#0f766e",
+  "#9f1239", "#854d0e", "#155e75", "#3f6212", "#6b21a8",
+];
 
 export const mockScriptProvider: ScriptProvider = {
   name: "mock-script",
@@ -74,7 +78,7 @@ export const mockSceneVideoProvider: SceneVideoProvider = {
   estimateCostUsd: () => 0,
   async start(req) {
     injectFault("mock-scene-video", req.prompt);
-    const idx = parseInt(contentHash(req.prompt).slice(0, 8), 16) % PALETTE.length;
+    const idx = parseInt(contentHash([req.prompt, req.variation ?? 0]).slice(-6), 16) % PALETTE.length;
     return {
       status: "completed",
       output: { placeholder: { color: PALETTE[idx], label: req.prompt.slice(0, 60) } },
@@ -152,7 +156,10 @@ export const mockSpeechProvider: SpeechProvider = {
   async synthesize(req) {
     injectFault("mock-speech", req.text);
     const durationMs = estimateSpeechMs(req.text);
-    return { audio: null, durationMs, captions: proportionalCaptions(req.text, durationMs) };
+    const captions = proportionalCaptions(req.text, durationMs);
+    // 음성 대신 단어 타이밍에 맞춘 톤 WAV (실제 파일 → Storage 업로드·재생·렌더 경로 검증)
+    const audio = { data: synthesizeToneWav(captions, durationMs, req.text.length), mimeType: "audio/wav" };
+    return { audio, durationMs, captions };
   },
 };
 

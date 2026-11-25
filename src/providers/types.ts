@@ -66,6 +66,8 @@ export type SceneVideoRequest = {
   durationSec: number;
   width: number;
   height: number;
+  /** 같은 프롬프트로 "다시 생성" 할 때 다른 결과를 얻기 위한 값 (seed 등). 없으면 0 */
+  variation?: number;
 };
 
 /**

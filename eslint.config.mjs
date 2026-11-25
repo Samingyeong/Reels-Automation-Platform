@@ -1,6 +1,7 @@
 import js from "@eslint/js";
 import nextPlugin from "@next/eslint-plugin-next";
 import remotion from "@remotion/eslint-plugin";
+import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 // Build Next.js recommended rules and an "off" map for overrides
@@ -22,6 +23,9 @@ export default [
       "next.config.js",
       "deploy.mjs",
       ".claude/**",
+      ".remotion-bundle/**",
+      "playwright-report/**",
+      "test-results/**",
       "supabase/**",
     ],
   },
@@ -35,6 +39,20 @@ export default [
     plugins: { "@next/next": nextPlugin },
     rules: {
       ...nextRecommendedRules,
+    },
+  },
+  // Node 스크립트
+  {
+    files: ["scripts/**/*.mjs"],
+    languageOptions: { globals: { console: "readonly", process: "readonly" } },
+  },
+  // React hooks 규칙 (rules-of-hooks, exhaustive-deps)
+  {
+    files: ["src/**/*.{ts,tsx}"],
+    plugins: { "react-hooks": reactHooks },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
   // Remotion rules applied only to remotion files

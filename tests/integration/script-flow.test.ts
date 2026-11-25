@@ -51,8 +51,7 @@ describe("대본 생성 → 수정 → 승인 (Mock provider, inline 실행)", (
     expect(approved.status).toBe("SCENES_GENERATING");
     const sceneJobs = (await getJobs(created.id)).filter((j) => j.kind === "scene_video");
     expect(sceneJobs).toHaveLength(detail.scenes.length);
-    // M1 에는 장면 실행기가 없으므로 queued 로 남는다 (성공으로 표시하지 않음)
-    expect(sceneJobs.every((j) => j.status === "queued" && j.dispatched_at === null)).toBe(true);
+    expect(sceneJobs.every((j) => j.dispatched_at !== null)).toBe(true); // 커밋 후 전달됨
 
     // 4) 같은 revision 으로 중복 승인(더블 클릭) → REVISION_CONFLICT, 작업 추가 생성 없음
     await expectServiceError(
@@ -60,6 +59,8 @@ describe("대본 생성 → 수정 → 승인 (Mock provider, inline 실행)", (
       "REVISION_CONFLICT",
     );
     expect((await getJobs(created.id)).filter((j) => j.kind === "scene_video")).toHaveLength(sceneJobs.length);
+    await t.flush();
+    expect((await getProject(created.id)).status).toBe("SCENES_REVIEW");
 
     const { data: approvals } = await admin().from("approvals").select("*").eq("project_id", created.id);
     expect(approvals).toHaveLength(1);
