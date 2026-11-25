@@ -13,7 +13,8 @@ export class TriggerDispatcher implements JobDispatcher {
   readonly name = "trigger";
   constructor(private readonly db: Db) {}
 
-  async dispatch(jobIds: string[]): Promise<void> {
+  /** delaySeconds: 재시도 대기 (Trigger.dev 지연 실행 — 대기 중에는 컴퓨트 비용 없음) */
+  async dispatch(jobIds: string[], opts: { delaySeconds?: number } = {}): Promise<void> {
     if (jobIds.length === 0) return;
     const { data: jobs, error } = await this.db
       .from("jobs")
@@ -24,10 +25,15 @@ export class TriggerDispatcher implements JobDispatcher {
       const idempotencyKey = await idempotencyKeys.create(`job:${job.id}:a${job.attempt}:d${job.dispatch_attempts}`, {
         scope: "global",
       });
+      const options = {
+        idempotencyKey,
+        tags: [`job:${job.id}`, job.kind],
+        ...(opts.delaySeconds ? { delay: `${Math.max(1, Math.round(opts.delaySeconds))}s` } : {}),
+      };
       const handle =
         job.kind === "render"
-          ? await tasks.trigger<typeof renderJob>("render-job", { jobId: job.id }, { idempotencyKey, tags: [`job:${job.id}`] })
-          : await tasks.trigger<typeof pipelineJob>("pipeline-job", { jobId: job.id }, { idempotencyKey, tags: [`job:${job.id}`, job.kind] });
+          ? await tasks.trigger<typeof renderJob>("render-job", { jobId: job.id }, options)
+          : await tasks.trigger<typeof pipelineJob>("pipeline-job", { jobId: job.id }, options);
       await this.db.rpc("mark_job_dispatched", { p_job_id: job.id, p_run_id: handle.id });
     }
   }

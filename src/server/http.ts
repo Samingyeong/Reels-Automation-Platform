@@ -1,7 +1,7 @@
 import "server-only";
 import { after, NextResponse } from "next/server";
 import { requireUser, type AuthContext } from "./auth";
-import { serverEnv } from "./env";
+import { EnvConfigError, serverEnv } from "./env";
 import { ServiceError } from "./errors";
 import { drainOutbox, InlineDispatcher, NoopDispatcher, type JobDispatcher } from "./jobs/dispatcher";
 import { runJob } from "./jobs/runner";
@@ -59,6 +59,11 @@ export async function readJson(req: Request): Promise<unknown> {
 }
 
 export function errorResponse(err: unknown) {
+  if (err instanceof EnvConfigError) {
+    // 배포 설정 누락(예: Trigger.dev 연결 없음)은 조용히 대체하지 않고 명확히 실패시킨다. 비밀 값은 메시지에 없다.
+    console.error("[config]", err.message);
+    return NextResponse.json({ error: { code: "SERVICE_MISCONFIGURED", message: err.message } }, { status: 503 });
+  }
   if (err instanceof ServiceError) {
     return NextResponse.json(
       { error: { code: err.code, message: err.message, details: err.details } },

@@ -7,21 +7,28 @@ import { createWorkerDeps } from "../server/jobs/worker-deps";
 
 /**
  * Trigger.dev 태스크는 얇은 래퍼다. 실행·재시도·상태 전이 로직은 모두 runJob() (DB 가 진실 공급원).
- *  - 태스크 재시도는 0 (trigger.config.ts). 실패 재시도는 jobs.run_after + 스윕이 다시 전달한다.
+ *  - 태스크 자체 재시도는 0 (trigger.config.ts). 일시 오류는 runJob 이 jobs.run_after 를 정하고,
+ *    여기서 같은 작업을 지연 실행(delay)으로 다시 전달한다. 스윕은 전달 누락에 대비한 안전망.
  *  - 같은 job 이 두 번 전달돼도 claim_job lease 로 한 번만 실행된다.
  */
 const JobPayload = z.object({ jobId: z.string().uuid() });
+
+async function execute(jobId: string) {
+  const deps = createWorkerDeps();
+  const outcome = await runJob(deps, jobId);
+  logger.info("job outcome", { jobId, ...outcome });
+  if (outcome.status === "retry_scheduled") {
+    await new TriggerDispatcher(deps.db).dispatch([jobId], { delaySeconds: outcome.delaySeconds });
+  }
+  return outcome;
+}
 
 export const pipelineJob = schemaTask({
   id: "pipeline-job",
   schema: JobPayload,
   machine: "small-1x",
   maxDuration: 900,
-  run: async ({ jobId }) => {
-    const outcome = await runJob(createWorkerDeps(), jobId);
-    logger.info("job outcome", { jobId, ...outcome });
-    return outcome;
-  },
+  run: async ({ jobId }) => execute(jobId),
 });
 
 /** MP4 렌더 전용 (Chromium + ffmpeg 인코딩) */
@@ -30,17 +37,17 @@ export const renderJob = schemaTask({
   schema: JobPayload,
   machine: "large-1x",
   maxDuration: 1800,
-  run: async ({ jobId }) => {
-    const outcome = await runJob(createWorkerDeps(), jobId);
-    logger.info("render outcome", { jobId, ...outcome });
-    return outcome;
-  },
+  run: async ({ jobId }) => execute(jobId),
 });
 
-/** Outbox 스윕: 전달 누락·재시도 대기 만료·lease 만료 작업을 다시 전달 (1분 주기) */
+/**
+ * Outbox 스윕: 전달 누락·lease 만료 작업을 다시 전달하는 안전망.
+ * 10분 주기·micro 머신 → 월 약 4,300회 × (실행비 + 수 초 컴퓨트) ≈ $0.2 (1분 주기는 약 $4 로 무료 크레딧 대부분 소진)
+ */
 export const sweepOutbox = schedules.task({
   id: "sweep-outbox",
-  cron: "* * * * *",
+  cron: "*/10 * * * *",
+  machine: "micro",
   run: async () => {
     const deps = createWorkerDeps();
     const count = await drainOutbox(deps.db, new TriggerDispatcher(deps.db));
