@@ -185,7 +185,7 @@ export function Studio({ initial, initialSceneId, mock }: { initial: ProjectDeta
           ) : view === "scenes" ? (
             <ScenesStage data={detail} act={act} pending={pending} selected={selected} onSelect={selectScene} />
           ) : view === "voice" ? (
-            <VoiceStage data={detail} act={act} pending={pending} selectedId={selected?.id ?? null} onSelect={onVoiceSelect} />
+            <VoiceStage mock={mock} data={detail} act={act} pending={pending} selectedId={selected?.id ?? null} onSelect={onVoiceSelect} />
           ) : (
             <RenderStage data={detail} />
           )}

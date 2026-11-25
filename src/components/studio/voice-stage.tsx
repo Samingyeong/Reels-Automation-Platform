@@ -18,7 +18,9 @@ export function VoiceStage({
   pending,
   selectedId,
   onSelect,
+  mock = false,
 }: {
+  mock?: boolean;
   data: ProjectDetail;
   act: Act;
   pending: boolean;
@@ -31,6 +33,11 @@ export function VoiceStage({
 
   return (
     <div className="space-y-4" data-testid="voice-stage">
+      {mock ? (
+        <p className="rounded-lg border border-status-review/30 bg-status-review/10 px-3 py-2 text-xs text-status-review" data-testid="mock-voice-notice">
+          Mock 음성: 실제 목소리가 아니라 단어마다 &lsquo;삐&rsquo; 신호음이 나는 테스트용 소리입니다. 길이·자막 타이밍 확인용이며, 음성 AI 를 연결하면 실제 나레이션으로 바뀝니다.
+        </p>
+      ) : null}
       <ol className="space-y-3">
         {scenes.map((s, i) => (
           <VoiceRow
