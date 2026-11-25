@@ -2,32 +2,69 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]
   pull_request:
 
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
+env:
+  PROVIDER_MODE: mock
+  PUBLISH_MODE: mock
+  NPM_VERSION: 11.21.3 # package.json packageManager 과 동일 (docs/decisions.md DR-006)
+
 jobs:
   verify:
+    name: lint · typecheck · test · build
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      PROVIDER_MODE: mock
-      PUBLISH_MODE: mock
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - run: npm install -g npm@${{ env.NPM_VERSION }}
       - run: npm ci
       - name: Lint
         run: npm run lint
       - name: Typecheck
         run: npm run typecheck
-      - name: Test
+      - name: Unit test
         run: npm test
       - name: Build
         run: npm run build
+
+  db-integration:
+    name: Supabase migrations · RLS · integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      JOB_DISPATCH_MODE: none
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install -g npm@${{ env.NPM_VERSION }}
+      - run: npm ci
+      - name: Start local Supabase (migrations applied on start)
+        run: npm run db:start
+      - name: DB lint (plpgsql_check)
+        run: npx supabase db lint --fail-on warning
+      - name: DB advisors (security/performance)
+        run: npx supabase db advisors --fail-on warn
+      - name: Generated types are up to date
+        run: |
+          npx supabase gen types typescript > /tmp/database.types.ts
+          diff -u src/server/database.types.ts /tmp/database.types.ts
+      - name: Integration tests
+        run: npm run test:integration
+      - name: Stop Supabase
+        if: always()
+        run: npx supabase stop --no-backup || true

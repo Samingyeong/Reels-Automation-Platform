@@ -1,0 +1,85 @@
+{
+  "version": 2,
+  "skills": {
+    "deploy-to-vercel": {
+      "source": "vercel-labs/agent-skills",
+      "commit": "5a37a6329fbad3666c3207392a6a7c0110e92efb",
+      "sourceType": "github",
+      "skillPath": "skills/deploy-to-vercel/SKILL.md",
+      "computedHash": "66b99dfa063b1c405155e9bffd99c04ca3e312e81b168d540b757bb194b7400a",
+      "installMode": "copy"
+    },
+    "supabase": {
+      "source": "supabase/agent-skills",
+      "commit": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+      "sourceType": "github",
+      "skillPath": "skills/supabase/SKILL.md",
+      "computedHash": "2fbff32fd63b7d31585cacf0ed43e5bf8d05dd20d6c0c751d256cb967a00eec1",
+      "installMode": "copy"
+    },
+    "supabase-postgres-best-practices": {
+      "source": "supabase/agent-skills",
+      "commit": "c9be0e931b7930f7d02126d04774d904c381e7d7",
+      "sourceType": "github",
+      "skillPath": "skills/supabase-postgres-best-practices/SKILL.md",
+      "computedHash": "3eb972c2d7c818e544e35cc33ea8d7147d4d78ae08142ef40037b0fbac7a2505",
+      "installMode": "copy"
+    },
+    "trigger-cost-savings": {
+      "source": "triggerdotdev/skills",
+      "commit": "43d4ee184f6f74b04d41710f6a73d69dc7d6616b",
+      "sourceType": "github",
+      "skillPath": "trigger-cost-savings/SKILL.md",
+      "computedHash": "5576bf67e5c9387ec9ac03f40accbfe3938529fdc7633177fdc5112a55063536",
+      "installMode": "copy"
+    },
+    "trigger-realtime": {
+      "source": "triggerdotdev/skills",
+      "commit": "43d4ee184f6f74b04d41710f6a73d69dc7d6616b",
+      "sourceType": "github",
+      "skillPath": "trigger-realtime/SKILL.md",
+      "computedHash": "f422106c256757a18bfda750441bd23d32ffe4671c6c55e9028b4b26b824ec90",
+      "installMode": "copy"
+    },
+    "trigger-setup": {
+      "source": "triggerdotdev/skills",
+      "commit": "43d4ee184f6f74b04d41710f6a73d69dc7d6616b",
+      "sourceType": "github",
+      "skillPath": "trigger-setup/SKILL.md",
+      "computedHash": "5418edcd5d7cc2a3ceed7d22f772eaf30dbbeb884ded41ead649675e39670396",
+      "installMode": "copy"
+    },
+    "trigger-tasks": {
+      "source": "triggerdotdev/skills",
+      "commit": "43d4ee184f6f74b04d41710f6a73d69dc7d6616b",
+      "sourceType": "github",
+      "skillPath": "trigger-tasks/SKILL.md",
+      "computedHash": "232531635f881b3865d0dda53e596f68a491ae81c9f32937b613213e3ba6a87c",
+      "installMode": "copy"
+    },
+    "vercel-composition-patterns": {
+      "source": "vercel-labs/agent-skills",
+      "commit": "5a37a6329fbad3666c3207392a6a7c0110e92efb",
+      "sourceType": "github",
+      "skillPath": "skills/composition-patterns/SKILL.md",
+      "computedHash": "f711ed8b16162eaa712abbcdbbae6c926f86c57e60127735fecc3ad0dd85b3fa",
+      "installMode": "copy"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "commit": "5a37a6329fbad3666c3207392a6a7c0110e92efb",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "7991ed4fbecdac23f47c1a40c243e00a212a9e7f3604db93959b3ae11dffe299",
+      "installMode": "copy"
+    },
+    "webapp-testing": {
+      "source": "anthropics/skills",
+      "commit": "e4bb5d960d87126ff3b3a8af1a104b7db67560ba",
+      "sourceType": "github",
+      "skillPath": "skills/webapp-testing/SKILL.md",
+      "computedHash": "48cd9a742a59250edec6db89cf081ef5465f365e2133f6d6c5e29c380b754b7d",
+      "installMode": "copy"
+    }
+  }
+}

@@ -7,6 +7,7 @@
  * live 구현은 M3 이후 추가된다 (docs/06-work-plan.md). 미구현 provider 를 live 로 요청하면
  * 조용히 mock 으로 대체하지 않고 즉시 에러를 던진다 → 임의 성공 표시 방지.
  */
+import "server-only";
 import { createMockProviders } from "./mock";
 import type { Providers } from "./types";
 

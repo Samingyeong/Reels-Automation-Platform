@@ -38,6 +38,19 @@ export const Script = z.object({
 });
 export type Script = z.infer<typeof Script>;
 
+/**
+ * 사용자가 편집해 저장하는 대본. 기존 장면은 id 를 유지해야 변경 여부(stale) 판단과
+ * 결과물 재사용이 가능하다. id 가 없는 장면은 새 장면으로 추가된다.
+ */
+export const EditableScript = Script.extend({
+  scenes: z.array(ScriptScene.extend({ id: z.string().uuid().optional() })).min(1).max(20),
+});
+export type EditableScript = z.infer<typeof EditableScript>;
+
+/** 프로젝트 생성 시 저장되는 생성 옵션 (topic 제외) */
+export const ProjectOptions = ScriptInput.omit({ topic: true });
+export type ProjectOptions = z.infer<typeof ProjectOptions>;
+
 /** @remotion/captions 의 Caption 타입과 동일한 형태. */
 export const Caption = z.object({
   text: z.string(),
