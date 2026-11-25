@@ -1,6 +1,6 @@
 # 02. DB 스키마
 
-원본: [`supabase/migrations/20261125000000_init.sql`](../supabase/migrations/20261125000000_init.sql). 이 문서는 의도와 불변식을 설명한다.
+원본: [`supabase/migrations/`](../supabase/migrations/) — `20261125000000_init.sql`(M0), `20261125022527_m1_transitions_outbox_versions.sql`(M1). 이 문서는 의도와 불변식을 설명한다.
 
 ## 1. ERD
 
@@ -42,21 +42,42 @@ auth.users 1─┬─< instagram_accounts
 
 해시는 `src/domain/hash.ts` 의 `contentHash`(키 정렬 JSON → SHA-256)만 사용한다.
 
-## 4. 동시성·트랜잭션
+## 4. 동시성·트랜잭션 (M1 구현, [DR-008](decisions.md#dr-008-원자적-상태-전이--outboxjobs-디스패치))
 
-- 상태 전이: `transition_project(id, expected_status, expected_revision, to, actor, event, payload)` → 반환 null 이면 409.
-- M1 에서 전이 + 승인 기록/취소 + job 생성 + 장면 stale 처리 를 한 번에 수행하는 `apply_transition(...)` RPC 로 확장한다 (부수효과를 JSON 으로 전달). 외부 호출(Trigger.dev)은 커밋 이후.
-- `jobs` 가 outbox 역할: `queued` 인데 `trigger_run_id` 가 없거나 오래된 job 은 스윕 태스크가 재트리거.
+| RPC | 역할 |
+| --- | --- |
+| `apply_transition(project, actor_user, actor, event, expected_status, expected_revision, to_status, ops, error)` | 행 잠금 → status·revision 검사(불일치 `REVISION_CONFLICT`) → 소유권 검사(`PROJECT_NOT_FOUND`) → 상태 변경·revision+1 → ops 순서대로 실행 → `project_events` 기록. 전부 한 트랜잭션 |
+| `claim_job(job, lease_seconds)` | `queued`(run_after 경과) 또는 lease 만료된 `running` 작업만 `SKIP LOCKED` 로 가져와 attempt+1 |
+| `release_job_for_retry(job, error, delay)` | 시도 횟수가 남으면 `queued` + 백오프, 아니면 `exhausted` |
+| `cancel_job(job, reason)` | 프로젝트 변경으로 무효가 된 작업 폐기 |
+| `mark_job_dispatched(job, run_id)` / `list_dispatchable_jobs(limit)` | Outbox 전달 기록 / 미전달·lease 만료 작업 스윕 |
 
-## 5. RLS
+`apply_transition` op 종류: `replace_script`, `revoke_approvals`, `record_approval`, `mark_scenes_stale`, `invalidate_render`, `cancel_scheduled_publication`(예약 + 대기 중 publish 작업 취소), `enqueue`(멱등 키 충돌 시 무시), `complete_job`, `fail_job`.
+TS 쪽 생성: [`src/server/ops.ts`](../src/server/ops.ts) `effectsToOps()`.
 
-- `authenticated`: 자기 소유 데이터 **SELECT 만**. Realtime 구독도 이 정책을 따른다.
-- 쓰기: 서버(Route Handler)가 사용자 검증 후 service_role 로 수행. 워커도 service_role.
-- `transition_project` 는 `anon`, `authenticated` 실행 권한 회수.
+### 장면 결과물 보존 규칙 (`replace_script`)
+- 장면 id 를 유지한 채 `visual_prompt`/`duration_sec` 가 바뀌면 `visual_status` → 결과물이 있으면 `stale`, 없으면 `pending`. `narration` 이 바뀌면 `narration_status` 동일 규칙.
+- 바뀌지 않은 장면은 상태·결과물 유지 → 재승인 후 재생성 대상에서 제외(비용 중복 방지).
+- 목록에 없는 장면은 삭제, id 없는 장면은 새로 추가, position 은 목록 순서로 재배치.
+
+### 승인 결과물 버전 관리
+- `approvals(version, snapshot)`: 단계별 버전이 1부터 증가, 승인 당시 콘텐츠 전체를 `snapshot` 에 보관. 새 승인은 이전 활성 승인을 `superseded` 로 대체, 수정은 `revoked_reason = 이벤트명` 으로 취소. 행은 삭제하지 않는다.
+- 현재 유효 승인 = `revoked_at is null` (단계별 최대 1개, 부분 유니크 인덱스).
+
+### 작업(jobs) 컬럼 (M1 추가)
+`payload`, `result`, `project_revision`(enqueue 시점 revision), `max_attempts`, `run_after`(백오프), `locked_until`(lease), `dispatched_at`, `dispatch_attempts`.
+
+## 5. RLS · GRANT ([DR-009](decisions.md#dr-009-db-보안-모델))
+
+- `authenticated`: 자기 소유 데이터 **SELECT 만** (테이블 GRANT + RLS). Realtime 구독도 이 정책을 따른다.
+- `anon`: 권한 없음. 새 테이블 자동 노출 없음(`auto_expose_new_tables: false`) → 테이블 추가 시 GRANT 를 마이그레이션에 명시.
+- 쓰기: 서버가 `getClaims()` 로 사용자 검증 후 service_role 로 RPC 호출. RPC 는 `SECURITY INVOKER` + `search_path=''`, EXECUTE 는 service_role 만.
+- `instagram_accounts.access_token_secret_id` 는 authenticated 컬럼 GRANT 에서 제외.
 - Storage `media`: 비공개 버킷, 첫 폴더가 `auth.uid()` 인 객체만 읽기.
 
 ## 6. 마이그레이션 규칙
 
 - 파일명 `YYYYMMDDHHMMSS_<설명>.sql`, 적용된 마이그레이션은 수정하지 않고 새 파일로.
 - enum 값 추가 시 `src/domain/pipeline.ts` 의 상수와 함께 변경하고 테스트 추가 (`.claude/skills/db-migration`).
-- 로컬: `supabase start` → `supabase db reset` 로 검증. 타입: `supabase gen types typescript --local > src/server/database.types.ts`.
+- 로컬: `npm run db:start` → `npm run db:reset` → `npx supabase db lint --fail-on warning` → `npx supabase db advisors --fail-on warn` → `npm run db:types`. CI 가 같은 순서로 검증하고 생성 타입이 최신인지 diff 로 확인한다.
+- 새 마이그레이션은 `npx supabase migration new <name>` 으로 만든다.

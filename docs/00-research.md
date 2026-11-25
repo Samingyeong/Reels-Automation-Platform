@@ -10,7 +10,7 @@
 | 렌더링 위치 | Trigger.dev 워커에서 `@remotion/bundler` + `@remotion/renderer` (`renderMedia`). 템플릿의 Lambda 코드는 제거 |
 | 코드 복사 허용 | MIT 프로젝트(MoneyPrinterTurbo, supabase/agent-skills)의 **아이디어·프롬프트 구조**만 TS 로 재작성. 출처 주석 표기 |
 | 코드 복사 금지 | Render Studio (FSL-1.1 — 경쟁 용도 제한). 설계 참고만 |
-| Agent Skills | 공식 skill 은 `scripts/install-agent-skills.sh` 로 설치(벤더링하지 않음). 프로젝트 전용 skill 만 `.claude/skills/` 에 커밋 |
+| Agent Skills | 공식 skill 은 `scripts/install-agent-skills.sh`(skills CLI + `skills-lock.json`)로 설치, Remotion 은 공식 Claude Code 플러그인 ([DR-007](decisions.md#dr-007-공식-agent-skills--remotion-플러그인-설치-방식)) |
 
 ## 2. 저장소별 검토
 
@@ -19,7 +19,7 @@
 - `template-next-app-dir` README 에 **"discontinued"** 표기가 있음. `remotion-saas` skill(v4.0.547)이 권장하는 Next.js 템플릿은 `template-next-app-dir-tailwind` → 이것을 사용.
 - 가져온 것: 디렉터리 구조, `remotion.config.ts`, Tailwind v4 webpack override, ESLint flat config(Remotion 규칙 분리), Player 사용 방식.
 - 제거한 것: `src/lambda`, `api/lambda/*`, `deploy.mjs`, `vercel.json`(빌드 시 Lambda 배포), 데모 컴포넌트.
-- 라이선스: Remotion 은 **Remotion License**. 개인·3인 이하 회사 무료, 그 이상은 Company License 필요. 렌더 시 `licenseKey` 전달 권장(`remotion-license`, `remotion-render` skill). → **사업화 전 라이선스 확인 필요 (이슈 D-1)**.
+- 라이선스: Remotion 은 **Remotion License**. 개인·3인 이하 회사 무료(상업적 이용·자동화·SaaS 포함). → **무료 라이선스로 결정, 재검토 조건은 [DR-001](decisions.md#dr-001-remotion-무료-라이선스-사용)**.
 
 ### remotion-dev/skills (v4.0.547)
 - `remotion-best-practices`, `remotion-captions`(Caption 타입·TikTok 스타일 자막), `remotion-render`, `remotion-saas`(템플릿·렌더 방식 비교), `remotion-license`, `remotion-multimedia` 등.
@@ -66,22 +66,15 @@
 
 ## 3. Instagram 공식 API (Graph API Content Publishing)
 
-> ⚠️ 이 세션의 네트워크 정책상 `developers.facebook.com` 에 접근할 수 없어 아래는 기존에 알려진 공식 스펙 기준이다. **M4 착수 전 공식 문서로 재검증한다 (이슈 D-2).**
+2026-11-25 에 공식 문서(`developers.facebook.com`, 네트워크 허용 후)를 직접 확인했다. Postman 문서는 공식 문서 접근이 가능해 사용하지 않았다.
+상세 결과와 결정은 **[decisions.md DR-002(인증)·DR-003(발행 정책)](decisions.md#dr-002-instagram-인증-instagram-api-with-instagram-login)** 에 있다. M0 의 추정 대비 정정 사항:
 
-- 계정: Instagram 비즈니스 또는 크리에이터 계정. 두 가지 로그인 경로
-  - Instagram Login: `graph.instagram.com`, 권한 `instagram_business_basic`, `instagram_business_content_publish`, (성과) `instagram_business_manage_insights`
-  - Facebook Login: `graph.facebook.com`, 권한 `instagram_basic`, `instagram_content_publish`, `pages_read_engagement` 등
-  - MVP 는 Facebook 페이지 연결이 필요 없는 **Instagram Login** 을 우선.
-- 발행 절차
-  1. `POST /{ig-user-id}/media` — `media_type=REELS`, `video_url`(공개 접근 가능한 URL), `caption`, `share_to_feed`, 선택 `cover_url`/`thumb_offset` → 컨테이너 id
-  2. `GET /{container-id}?fields=status_code` 폴링 — `IN_PROGRESS` / `FINISHED` / `ERROR` / `EXPIRED` / `PUBLISHED`
-  3. `POST /{ig-user-id}/media_publish` — `creation_id={container-id}` → 미디어 id
-  4. `GET /{media-id}?fields=permalink`
-- 제한: 계정당 24시간 내 API 게시 수 제한(문서상 100건)이 있으며 `GET /{ig-user-id}/content_publishing_limit` 로 확인. 컨테이너는 생성 후 일정 시간(24시간) 내 게시하지 않으면 만료.
-- **API 자체 예약 게시 기능이 없다** → 예약은 Trigger.dev `delay` 로 우리 쪽에서 구현.
-- Reels 영상 권장: MP4/MOV, H.264 + AAC, 9:16, 1080×1920, 23–60fps. 우리 렌더 기본값 1080×1920, 30fps, h264/aac.
-- 성과: `GET /{media-id}/insights?metric=...` — Reels 는 `views`, `reach`, `likes`, `comments`, `shares`, `saved`, `total_interactions` 등. `plays`·`impressions` 계열은 단계적으로 폐지됨 → 지표 목록은 설정값으로 두고, 응답에 없는 지표는 저장하지 않는다.
-- `video_url` 은 Supabase Storage **signed URL**(충분한 만료 시간, 예: 2시간)로 전달한다. 버킷은 비공개 유지.
+- 인증: Instagram Login / Facebook Login 외에 **Unified Login**(신규 권장, 비즈니스 포트폴리오 필요)이 추가됨. 개인용은 Instagram Login + Standard Access 채택.
+- 발행 한도: 가이드는 100건/24h, `content_publishing_limit` 레퍼런스는 `quota_total` 50 → 런타임 조회값을 기준으로 함.
+- 컨테이너: 24시간 후 `EXPIRED`, 상태 폴링은 1분 간격·최대 5분 권장.
+- Instagram Login 은 resumable 업로드 미지원 → `video_url`(signed URL) 사용.
+- `is_ai_generated` 파라미터로 AI 생성 고지 가능 → 기본 true.
+- 성과: `impressions` 는 2024-07-02 이후 미디어에서 폐지, Reels 는 `views`/`reach`/`saved`/`shares`/`ig_reels_avg_watch_time` 등.
 
 ## 4. 기타 외부 API 후보 (provider 구현 후보, M3)
 

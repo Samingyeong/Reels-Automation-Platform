@@ -25,6 +25,26 @@ export class ProviderError extends Error {
   }
 }
 
+/**
+ * Provider 메타데이터. D-3/D-4 선정 기준(docs/decisions.md DR-004)을 코드로 표현해
+ * 교체 시 비교·검증할 수 있게 한다. 값을 모르면 "unknown" 으로 두고 추측하지 않는다.
+ */
+export type ProviderInfo = {
+  /** 멱등 키에 포함되는 이름. 모델·보이스 등 결과에 영향을 주는 설정을 포함한다. */
+  name: string;
+  mode: "mock" | "live";
+  /** 지원 언어 (BCP-47). 한국어 지원 여부 판단용 */
+  languages: string[] | "unknown";
+  /** 생성물 상업적 이용 가능 여부 (약관 확인 결과) */
+  commercialUse: "yes" | "no" | "conditional" | "unknown";
+  /** 비동기 작업형(start/poll) 여부 */
+  async: boolean;
+  /** 장면 단위 개별 생성 가능 여부 (특정 장면만 재생성) */
+  perSceneGeneration: boolean;
+  /** 확인한 문서 URL·날짜 등 근거 */
+  reference?: string;
+};
+
 /** 생성된 바이너리. 워커가 Supabase Storage 에 업로드한다. */
 export type BinaryOutput = {
   data: Uint8Array;
@@ -34,6 +54,9 @@ export type BinaryOutput = {
 // ---------- 1. 대본 ----------
 export interface ScriptProvider {
   readonly name: string;
+  readonly info: ProviderInfo;
+  /** 호출 전 예상 비용(USD). 유료 호출 전 예산 확인에 사용. 모르면 null */
+  estimateCostUsd(input: ScriptInput): number | null;
   generateScript(input: ScriptInput): Promise<Script>;
 }
 
@@ -56,6 +79,8 @@ export type SceneVideoResult =
 
 export interface SceneVideoProvider {
   readonly name: string;
+  readonly info: ProviderInfo;
+  estimateCostUsd(req: SceneVideoRequest): number | null;
   start(req: SceneVideoRequest): Promise<SceneVideoResult>;
   poll(externalJobId: string): Promise<SceneVideoResult>;
 }
@@ -72,6 +97,8 @@ export type SpeechResult = {
 
 export interface SpeechProvider {
   readonly name: string;
+  readonly info: ProviderInfo;
+  estimateCostUsd(req: SpeechRequest): number | null;
   synthesize(req: SpeechRequest): Promise<SpeechResult>;
 }
 

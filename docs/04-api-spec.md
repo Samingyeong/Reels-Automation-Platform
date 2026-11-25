@@ -1,6 +1,8 @@
 # 04. API 명세
 
-Next.js Route Handlers (`src/app/api/**/route.ts`). 모든 요청은 Supabase Auth 쿠키 세션 필요.
+Next.js Route Handlers (`src/app/api/**/route.ts`). 인증: Supabase Auth 쿠키 세션(브라우저) 또는 `Authorization: Bearer <access_token>`(API 클라이언트·테스트). 서버는 `getClaims()` 로 서명을 검증한다.
+
+**구현 상태 (M1)**: ✅ = 구현·통합 테스트 완료. 나머지는 해당 마일스톤에서 구현.
 
 ## 공통 규약
 
@@ -21,20 +23,22 @@ type ProjectSummary = { id: string; status: ProjectStatus; revision: number; upd
 
 | Method | Path | Body | 응답 | 전이 |
 | --- | --- | --- | --- | --- |
-| GET | `/api/projects` | – | `ProjectSummary[]` (+ title, 썸네일) | – |
-| POST | `/api/projects` | `ScriptInput` | `201 ProjectSummary` | → DRAFT |
-| GET | `/api/projects/:id` | – | `ProjectDetail` (scenes, approvals 유효여부, jobs 최근, currentRender, publications, contentHashes) | – |
+| ✅ GET | `/api/projects` | – | `ProjectSummary[]` (+ title, 썸네일) | – |
+| ✅ POST | `/api/projects` | `ScriptInput` | `201 ProjectSummary` | → DRAFT |
+| ✅ GET | `/api/projects/:id` | – | `ProjectDetail` (scenes, approvals 유효여부, jobs 최근, currentRender, publications, contentHashes) | – |
 | DELETE | `/api/projects/:id` | – | `204` | 진행 중 작업 있으면 409 |
 
-`ProjectDetail.contentHashes = { script, scenes, final }` — 화면이 승인 요청 시 그대로 돌려보낸다.
+`ProjectDetail = { project, scenes, approvals(전체 버전), activeApprovals, jobs(최근 20), contentHashes }`. M1 의 `contentHashes` 는 `{ script }` (scenes·final 은 M2). 화면은 승인 요청 시 이 해시를 그대로 돌려보낸다.
+
+응답 예 (`POST /api/projects/:id/script/approve` 202): `{ id, status: "SCENES_GENERATING", revision, jobIds: [...] }`
 
 ## 1. 대본
 
 | Method | Path | Body | 응답 | 이벤트 |
 | --- | --- | --- | --- | --- |
-| POST | `/api/projects/:id/script/generate` | `{ revision }` | 202 | GENERATE_SCRIPT |
-| PUT | `/api/projects/:id/script` | `{ revision, script: Script }` (장면 id 유지 시 `scenes[].id` 포함) | 200 | EDIT_SCRIPT |
-| POST | `/api/projects/:id/script/approve` | `{ revision, contentHash }` | 202 | APPROVE_SCRIPT |
+| ✅ POST | `/api/projects/:id/script/generate` | `{ revision }` | 202 | GENERATE_SCRIPT |
+| ✅ PUT | `/api/projects/:id/script` | `{ revision, script: Script }` (장면 id 유지 시 `scenes[].id` 포함) | 200 | EDIT_SCRIPT |
+| ✅ POST | `/api/projects/:id/script/approve` | `{ revision, contentHash }` | 202 | APPROVE_SCRIPT |
 
 ## 2. 장면 영상
 
@@ -57,7 +61,7 @@ type ProjectSummary = { id: string; status: ProjectStatus; revision: number; upd
 
 | Method | Path | Body | 응답 | 이벤트 |
 | --- | --- | --- | --- | --- |
-| POST | `/api/projects/:id/retry` | `{ revision }` | 202 | RETRY (현재 *_FAILED 단계) |
+| ✅ POST | `/api/projects/:id/retry` | `{ revision }` | 202 | RETRY (현재 *_FAILED 단계) |
 | GET | `/api/projects/:id/render` | – | `{ status, videoUrl?(signed), sizeBytes?, durationMs? }` | – |
 
 사용자가 MP4 를 다운로드·업로드하는 흐름은 제공하지 않는다. 미리보기용 signed URL 만 노출.
@@ -85,7 +89,7 @@ type ProjectSummary = { id: string; status: ProjectStatus; revision: number; upd
 
 ## 7. 워커 → 서버
 
-워커는 HTTP 로 서버를 부르지 않고 **직접 DB 에 기록**한다 (`src/server/project-service.ts` 의 동일 함수 사용, service_role). 따라서 외부에 노출된 웹훅 엔드포인트가 없다.
+워커는 HTTP 로 서버를 부르지 않고 `src/server/jobs/runner.ts` 의 `runJob()` 으로 직접 DB RPC 를 호출한다 (service_role). 외부에 노출된 웹훅 엔드포인트가 없다. M1 은 `JOB_DISPATCH_MODE=inline`(응답 후 `after()` 로 같은 프로세스에서 실행)·`none`, M2 에서 `trigger` 추가.
 
 ## 8. Trigger.dev 태스크 계약
 

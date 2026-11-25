@@ -4,22 +4,54 @@
  */
 import type { Caption, Script, ScriptInput } from "../../domain/schemas";
 import { contentHash } from "../../domain/hash";
-import type {
-  CaptionProvider,
-  ContainerStatus,
-  InsightsProvider,
-  Providers,
-  PublisherProvider,
-  SceneVideoProvider,
-  ScriptProvider,
-  SpeechProvider,
+import {
+  ProviderError,
+  type CaptionProvider,
+  type ProviderInfo,
+  type ContainerStatus,
+  type InsightsProvider,
+  type Providers,
+  type PublisherProvider,
+  type SceneVideoProvider,
+  type SceneVideoResult,
+  type ScriptProvider,
+  type SpeechProvider,
 } from "../types";
+
+const mockInfo = (name: string, extra: Partial<ProviderInfo> = {}): ProviderInfo => ({
+  name,
+  mode: "mock",
+  languages: ["ko", "en"],
+  commercialUse: "yes", // 외부 생성물이 없으므로 제약 없음
+  async: false,
+  perSceneGeneration: true,
+  ...extra,
+});
+
+/**
+ * 장애 주입 표식. 프롬프트/문장에 포함되면 Mock 이 해당 오류를 낸다.
+ * 유료 API 없이 재시도·실패 복구 경로를 테스트하기 위함.
+ */
+export const MOCK_FAIL_RETRYABLE = "[mock:fail-retryable]";
+export const MOCK_FAIL_FATAL = "[mock:fail-fatal]";
+
+function injectFault(provider: string, text: string) {
+  if (text.includes(MOCK_FAIL_FATAL)) {
+    throw new ProviderError("mock 영구 오류 (정책 위반 모사)", { provider, retryable: false, code: "MOCK_FATAL" });
+  }
+  if (text.includes(MOCK_FAIL_RETRYABLE)) {
+    throw new ProviderError("mock 일시 오류 (503 모사)", { provider, retryable: true, code: "MOCK_503" });
+  }
+}
 
 const PALETTE = ["#1e3a8a", "#7c2d12", "#14532d", "#581c87", "#0f766e", "#9f1239"];
 
 export const mockScriptProvider: ScriptProvider = {
   name: "mock-script",
+  info: mockInfo("mock-script"),
+  estimateCostUsd: () => 0,
   async generateScript(input: ScriptInput): Promise<Script> {
+    injectFault("mock-script", input.topic);
     const sceneCount = Math.min(6, Math.max(3, Math.round(input.targetDurationSec / 6)));
     const per = Math.round((input.targetDurationSec / sceneCount) * 10) / 10;
     return {
@@ -38,7 +70,10 @@ export const mockScriptProvider: ScriptProvider = {
 
 export const mockSceneVideoProvider: SceneVideoProvider = {
   name: "mock-scene-video",
+  info: mockInfo("mock-scene-video"),
+  estimateCostUsd: () => 0,
   async start(req) {
+    injectFault("mock-scene-video", req.prompt);
     const idx = parseInt(contentHash(req.prompt).slice(0, 8), 16) % PALETTE.length;
     return {
       status: "completed",
@@ -49,6 +84,41 @@ export const mockSceneVideoProvider: SceneVideoProvider = {
     throw new Error("mock-scene-video 는 동기형이므로 poll 을 호출하면 안 됩니다.");
   },
 };
+
+/**
+ * 비동기 작업형 영상 API 모사 (대부분의 AI 영상 생성 API 형태).
+ * start → processing(externalJobId) → poll N회 후 completed. 결과는 externalJobId 로 결정되므로
+ * 워커가 재시작돼도 저장된 id 로 폴링을 이어갈 수 있다.
+ */
+export function createAsyncMockSceneVideoProvider(opts: { pollsUntilDone?: number } = {}): SceneVideoProvider & {
+  startCalls: number;
+} {
+  const pollsUntilDone = opts.pollsUntilDone ?? 2;
+  const polls = new Map<string, number>();
+  const provider = {
+    name: "mock-scene-video-async",
+    info: mockInfo("mock-scene-video-async", { async: true }),
+    startCalls: 0,
+    estimateCostUsd: () => 0,
+    async start(req: Parameters<SceneVideoProvider["start"]>[0]): Promise<SceneVideoResult> {
+      provider.startCalls++;
+      injectFault("mock-scene-video-async", req.prompt);
+      const externalJobId = `mockjob_${contentHash(req).slice(0, 16)}`;
+      return { status: "processing", externalJobId };
+    },
+    async poll(externalJobId: string): Promise<SceneVideoResult> {
+      if (!externalJobId.startsWith("mockjob_")) {
+        return { status: "failed", error: new ProviderError("unknown job", { provider: "mock-scene-video-async", retryable: false }) };
+      }
+      const n = (polls.get(externalJobId) ?? 0) + 1;
+      polls.set(externalJobId, n);
+      if (n < pollsUntilDone) return { status: "processing", externalJobId };
+      const idx = parseInt(externalJobId.slice(8, 16), 16) % PALETTE.length;
+      return { status: "completed", output: { placeholder: { color: PALETTE[idx], label: externalJobId } } };
+    },
+  };
+  return provider;
+}
 
 /** 한국어 기준 대략 초당 7음절로 길이를 추정한다. */
 export function estimateSpeechMs(text: string): number {
@@ -77,7 +147,10 @@ export function proportionalCaptions(text: string, durationMs: number): Caption[
 
 export const mockSpeechProvider: SpeechProvider = {
   name: "mock-speech",
+  info: mockInfo("mock-speech"),
+  estimateCostUsd: () => 0,
   async synthesize(req) {
+    injectFault("mock-speech", req.text);
     const durationMs = estimateSpeechMs(req.text);
     return { audio: null, durationMs, captions: proportionalCaptions(req.text, durationMs) };
   },

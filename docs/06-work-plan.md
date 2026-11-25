@@ -5,7 +5,7 @@
 | 단계 | 목표 | 완료 기준(검증 방법) |
 | --- | --- | --- |
 | **M0** 기반·계약 ✅ | 템플릿, 상태 머신, 스키마, provider 인터페이스+Mock, DB 마이그레이션 초안, 문서, CLAUDE.md, skills, CI | `npm run ci` 통과, Remotion still 렌더 확인 |
-| **M1** 데이터 계층 | Supabase 로컬, Auth, `project-service`(전이 실행), `apply_transition` RPC, API 라우트(대본까지) | `supabase db reset` 성공, 서비스 통합 테스트(로컬 Supabase), API 테스트 |
+| **M1** 데이터 계층 ✅ | Supabase 로컬, Auth, `project-service`(전이 실행), `apply_transition` RPC, Outbox 작업, 대본 API | 로컬·GitHub Actions 모두 통과: db lint/advisors 0건, 단위 45 + 통합 22 테스트, HTTP 스모크 ([07 §6](07-test-deploy.md#6-검증-기록)) |
 | **M2** Mock 전체 흐름 | Trigger.dev 태스크(Mock), 검수 UI(shadcn), Realtime, 장면 재생성, 렌더 → Storage | Playwright E2E: 주제 입력 → 3회 승인 → 렌더 MP4 Storage 저장 → Mock 예약 발행 |
 | **M3** Live 생성 | LLM·장면영상·TTS live provider, 비용 한도, 재사용 검증 | provider 계약 테스트, 스테이징 실호출 1회 (비용 승인 후) |
 | **M4** Instagram 연동 | OAuth, Vault 토큰, live publisher, 한도 확인 | 테스트 계정에 **사용자 승인 후** 실제 게시 1회 |
@@ -13,17 +13,19 @@
 
 ## 2. 이슈 목록
 
-### M1
-- M1-1 Supabase 로컬 설정(`supabase init`), 마이그레이션 적용 검증, 타입 생성
-- M1-2 `@supabase/ssr` 클라이언트(server/browser/admin) + 미들웨어 세션 갱신
-- M1-3 `apply_transition` RPC (전이 + 승인 기록/취소 + job insert + stale 처리 단일 트랜잭션)
-- M1-4 `src/server/project-service.ts`: `dispatch(projectId, event, actor)` — pipeline.transition → RPC → 커밋 후 enqueue
-- M1-5 콘텐츠 해시 계산기(script/scenes/final) + 승인 API 의 contentHash 검증
-- M1-6 ESLint 규칙: client 컴포넌트에서 `src/providers`, `src/server`, `src/trigger` import 금지
-- M1-7 프로젝트 생성/조회/대본 API + 테스트
+### M1 (완료)
+- ✅ M1-1 Supabase 로컬(CLI v3, `config.jsonc`), 마이그레이션 2개, 타입 생성·CI 최신성 검사
+- ✅ M1-2 `@supabase/ssr` 서버 클라이언트, Bearer 토큰 클라이언트, admin 클라이언트, `proxy.ts` 세션 갱신
+- ✅ M1-3 `apply_transition` RPC + `claim_job`/`release_job_for_retry`/`cancel_job`/Outbox RPC
+- ✅ M1-4 `project-service.dispatchUserEvent`: 소유권 → `transition()` → RPC → 커밋 후 디스패치
+- ✅ M1-5 대본 콘텐츠 해시 + 승인 시 `CONTENT_CHANGED` 검증, 승인 버전·스냅샷 (scenes/final 해시는 M2)
+- ✅ M1-6 서버 전용 모듈 보호: `server-only` 가드(`src/server/**`, provider registry). ESLint 규칙 대신 Next.js 빌드 오류로 강제
+- ✅ M1-7 API: 프로젝트 생성/목록/상세, 대본 생성·수정·승인, 재시도 + 통합 테스트
+- ✅ M1-8 작업 러너: lease 기반 1회 실행, 백오프 재시도, 시도 소진 시 `*_FAILED`, 변경된 프로젝트 작업 취소
+- ✅ M1-9 provider 메타데이터·비용 추정·계약 테스트·비동기 Mock·장애 주입 (D-3/D-4 대비)
 
 ### M2
-- M2-1 Trigger.dev 설정(`trigger.config.ts`, 버전 고정, Remotion 빌드 확장)
+- M2-1 Trigger.dev 설정(`trigger.config.ts`, 버전 고정, Remotion 빌드 확장) + `TriggerDispatcher`(jobs.idempotency_key → global idempotency key) + 스윕 cron(`drainOutbox`)
 - M2-2 `generate-script`, `generate-scene-video`, `generate-narration` 태스크 (Mock)
 - M2-3 `render-reel` 태스크: 번들 전략(빌드 시 번들 → additionalFiles) + Storage 업로드
 - M2-4 `publish-reel`(Mock) + 예약/변경/취소 + `requeue-stuck-jobs`
@@ -44,11 +46,11 @@
 - M4-3 발행 실패 복구 UX (게시 여부 확인 → 재예약/정정)
 - M4-4 **실제 게시 테스트 (사용자 승인 필수)**
 
-### 결정 필요 (D)
-- D-1 Remotion Company License 필요 여부 (팀 규모·수익 기준)
-- D-2 Instagram 공식 문서 재검증 (현 세션 네트워크 정책상 접근 불가)
-- D-3 장면 영상 provider 선택 (비용 vs 품질)
-- D-4 TTS provider·기본 보이스 선택
+### 결정 (D) — 상세는 [decisions.md](decisions.md)
+- ✅ D-1 Remotion: 무료 라이선스 (DR-001, 재검토 조건 기록)
+- ✅ D-2 Instagram: 공식 문서 검증 완료, Instagram Login 채택 (DR-002, DR-003)
+- ⏸ D-3 장면 영상 provider: 미확정, 평가 기준 고정 (DR-004) — M2 이후 평가
+- ⏸ D-4 TTS provider: 미확정, 평가 기준 고정 (DR-004) — M2 이후 평가
 - D-5 Trigger.dev Cloud 플랜 / 머신 크기 (렌더 시간 측정 후)
 
 ## 3. 파일 소유권

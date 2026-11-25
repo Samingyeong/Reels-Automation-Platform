@@ -7,6 +7,7 @@ export default defineConfig({
   },
   test: {
     include: ["src/**/*.test.ts"],
+    exclude: ["src/providers/contract.ts"],
     environment: "node",
   },
 });

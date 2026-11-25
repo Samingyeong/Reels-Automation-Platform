@@ -59,9 +59,10 @@ docs/                      설계 문서
 1. `POST /api/projects/:id/scenes/approve { contentHash, revision }`
 2. 서버: 사용자·소유권 확인 → 현재 장면들의 해시 계산 → `contentHash` 일치 확인 → 모든 장면 `visual_status = ready` 확인
 3. `transition(status, APPROVE_SCENES)` → `{ to: NARRATION_GENERATING, effects: [RECORD_APPROVAL, ENQUEUE narration] }`
-4. 단일 DB 트랜잭션(RPC): 상태 전이(revision 검사) + approvals insert + jobs insert(queued)
-5. 커밋 후 `tasks.trigger("generate-narration", ..., { idempotencyKey })` → `jobs.trigger_run_id` 저장
-   - 트리거 실패 시 job 은 `queued` 로 남고, 스윕 태스크(`requeue-stuck-jobs`, 5분 주기)가 재트리거한다 (outbox 패턴).
+4. 단일 DB 트랜잭션(`apply_transition` RPC): 상태 전이(revision 검사) + 승인 버전 기록 + jobs insert(queued)
+5. 커밋 후 `JobDispatcher.dispatch(jobIds)` → `jobs.dispatched_at` 기록. M1: `inline`(Next `after()`로 응답 후 실행) / `none`, M2: `tasks.trigger(..., { idempotencyKey })` → `jobs.trigger_run_id`
+   - 전달 실패 시 job 은 `queued` 로 남고, 스윕(`drainOutbox` → `list_dispatchable_jobs`)이 재전달한다 (outbox 패턴, [DR-008](decisions.md#dr-008-원자적-상태-전이--outboxjobs-디스패치)).
+6. 실행: `runJob()` → `claim_job` lease(1회 실행) → provider 호출 → 결과 저장·상태 전이·작업 완료를 `apply_transition` 한 번으로. 일시 오류는 백오프 재시도, 소진/영구 오류는 `*_FAILED`.
 
 ### 4.2 장면 단위 재생성
 - `REGENERATE_SCENES { sceneIds }` → 해당 장면만 `visual_status=generating`, 장면 job 만 큐잉.

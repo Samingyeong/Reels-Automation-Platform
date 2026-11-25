@@ -11,8 +11,9 @@ beforeAll(async () => {
   user = await createTestUser();
 });
 
-function providersWith(script: Providers["script"]): Providers {
-  return { ...createMockProviders(), script };
+function providersWith(script: Pick<Providers["script"], "name" | "generateScript">): Providers {
+  const base = createMockProviders();
+  return { ...base, script: { ...base.script, ...script } };
 }
 
 /** 생성 요청까지만 하고 작업은 실행하지 않은 상태 (dispatcher=none) */
